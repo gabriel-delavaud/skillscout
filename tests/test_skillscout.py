@@ -241,5 +241,35 @@ class TestRank(unittest.TestCase):
         self.assertEqual([r["skill_id"] for r in out], ["c", "a"])
 
 
+class TestLocateSkillMd(unittest.TestCase):
+    TREE = ["README.md", "skills/securite-developpement/SKILL.md",
+            "skills/rgaa/SKILL.md", "SKILL.md"]
+
+    def test_trouve_par_repertoire_nomme(self):
+        self.assertEqual(
+            skillscout.locate_skill_md(self.TREE, "rgaa"),
+            "skills/rgaa/SKILL.md")
+
+    def test_repli_sur_la_racine_si_un_seul_skill_md(self):
+        self.assertEqual(
+            skillscout.locate_skill_md(["SKILL.md", "README.md"], "peu-importe"),
+            "SKILL.md")
+
+    def test_none_si_introuvable(self):
+        # Cas réel : skills.sh référence encore `securite-anssi`, renommé depuis.
+        self.assertIsNone(skillscout.locate_skill_md(self.TREE, "securite-anssi"))
+
+
+class TestFetchSkillMd(unittest.TestCase):
+    def test_tronque_au_plafond(self):
+        cm = MagicMock()
+        cm.read.return_value = ("x" * 5000).encode()
+        cm.__enter__ = lambda s: cm
+        cm.__exit__ = lambda s, *a: False
+        with patch("skillscout.urlopen", return_value=cm):
+            out = skillscout.fetch_skill_md("a/b", "main", "SKILL.md", limit=100)
+        self.assertEqual(len(out), 100)
+
+
 if __name__ == "__main__":
     unittest.main()

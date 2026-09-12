@@ -247,3 +247,29 @@ def rank(evaluated: list[dict], top: int = 10) -> list[dict]:
     kept = [e for e in evaluated if not e["excluded"]]
     kept.sort(key=lambda e: e["score"], reverse=True)
     return kept[:top]
+
+
+RAW_URL = "https://raw.githubusercontent.com/{source}/{branch}/{path}"
+SKILL_MD_LIMIT = 3000
+
+
+def locate_skill_md(paths: list[str], skill_id: str) -> str | None:
+    """Retrouve le SKILL.md d'un skill donné dans l'arborescence du dépôt.
+    Préfère le répertoire portant le nom du skill ; se replie sur la racine
+    quand le dépôt n'expose qu'un seul skill."""
+    candidates = [p for p in paths if p.endswith("SKILL.md")]
+    for p in candidates:
+        parts = p.split("/")
+        if len(parts) >= 2 and parts[-2] == skill_id:
+            return p
+    if candidates == ["SKILL.md"]:
+        return "SKILL.md"
+    return None
+
+
+def fetch_skill_md(source: str, branch: str, path: str,
+                   limit: int = SKILL_MD_LIMIT) -> str:
+    url = RAW_URL.format(source=source, branch=branch, path=quote(path))
+    req = Request(url, headers={"User-Agent": "skillscout"})
+    with urlopen(req, timeout=HTTP_TIMEOUT) as r:
+        return r.read().decode("utf-8", "replace")[:limit]
