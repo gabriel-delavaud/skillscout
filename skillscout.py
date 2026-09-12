@@ -1,12 +1,14 @@
 """skillscout — trie les skills de skills.sh par confiance, puis fait expliquer
 un top 3 par un LLM local. Bibliothèque standard uniquement."""
 
+import contextlib
 import datetime as _dt
 import json
 import math
 import sqlite3
 import subprocess
 import time
+from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import urlopen, Request
 
@@ -51,7 +53,7 @@ class Cache:
 
     def __init__(self, path: str):
         self.path = path
-        with sqlite3.connect(self.path) as db:
+        with contextlib.closing(sqlite3.connect(self.path)) as db, db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS entries ("
                 " kind TEXT, key TEXT, value TEXT, fetched_at REAL,"
@@ -59,7 +61,7 @@ class Cache:
             )
 
     def get(self, kind: str, key: str) -> dict | None:
-        with sqlite3.connect(self.path) as db:
+        with contextlib.closing(sqlite3.connect(self.path)) as db, db:
             row = db.execute(
                 "SELECT value, fetched_at FROM entries WHERE kind=? AND key=?",
                 (kind, key),
@@ -69,7 +71,7 @@ class Cache:
         return json.loads(row[0])
 
     def put(self, kind: str, key: str, value: dict) -> None:
-        with sqlite3.connect(self.path) as db:
+        with contextlib.closing(sqlite3.connect(self.path)) as db, db:
             db.execute(
                 "INSERT OR REPLACE INTO entries VALUES (?,?,?,?)",
                 (kind, key, json.dumps(value), time.time()),
@@ -107,6 +109,11 @@ def fetch_repo(source: str, cache: Cache) -> dict:
             "pushed_at": raw.get("pushed_at") or "",
             "owner_type": (raw.get("owner") or {}).get("type") or "User",
             "default_branch": raw.get("default_branch") or "main",
+            # Identité authentifiée par l'API : `source` vient de skills.sh et
+            # peut être périmé si le dépôt a été renommé/transféré depuis —
+            # `gh api repos/{source}` suit silencieusement la redirection.
+            "full_name": raw.get("full_name") or "",
+            "owner_login": (raw.get("owner") or {}).get("login") or "",
         }
     return _cached(cache, "repo", source, build)
 
@@ -122,16 +129,33 @@ def fetch_owner(owner: str, cache: Cache) -> dict:
     return _cached(cache, "owner", owner, build)
 
 
-def fetch_tree(source: str, cache: Cache) -> list[str]:
+def _fetch_tree_cached(source: str, cache: Cache) -> dict:
     def build():
         raw = gh_json(f"repos/{source}/git/trees/HEAD?recursive=1")
-        return {"paths": [t["path"] for t in raw.get("tree", []) if t.get("path")]}
-    return _cached(cache, "tree", source, build)["paths"]
+        return {
+            "paths": [t["path"] for t in raw.get("tree", []) if t.get("path")],
+            # GitHub tronque silencieusement au-delà d'environ 100 000 entrées
+            # ou 7 Mo : les entrées omises sont justement celles où un script
+            # aurait pu se cacher.
+            "truncated": bool(raw.get("truncated")),
+        }
+    return _cached(cache, "tree", source, build)
 
 
-EXEC_SUFFIXES = (".sh", ".py", ".js", ".mjs", ".cjs", ".ts", ".rb",
-                 ".pl", ".ps1", ".bat", ".command")
-EXEC_DIRS = ("scripts", "hooks")
+def fetch_tree(source: str, cache: Cache) -> list[str]:
+    return _fetch_tree_cached(source, cache)["paths"]
+
+
+def fetch_tree_truncated(source: str, cache: Cache) -> bool:
+    """Indique si l'arborescence renvoyée par `fetch_tree` est tronquée par
+    GitHub, et donc incomplète — partage le même cache que `fetch_tree`."""
+    return _fetch_tree_cached(source, cache)["truncated"]
+
+
+EXEC_SUFFIXES = (".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".cjs", ".ts",
+                 ".rb", ".pl", ".ps1", ".bat", ".command", ".ipynb", ".go",
+                 ".rs", ".php")
+EXEC_DIRS = ("scripts", "hooks", "bin")
 
 TRUSTED_PUBLISHERS = frozenset({
     "anthropics", "vercel", "vercel-labs", "etalab-ia", "firebase",
@@ -190,13 +214,37 @@ EXEC_PENALTY = 20.0
 
 
 def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
-             paths: list[str], now: float) -> dict:
+             paths: list[str], now: float, truncated: bool = False) -> dict:
     """Applique l'exclusion stricte puis calcule le score de classement."""
-    owner = cand["source"].split("/")[0]
-    execs = find_executables(paths)
-    trusted = is_trusted_publisher(owner, owner_meta, repo_meta, now)
+    # L'identité vient de l'API (`repo_meta`), jamais de la chaîne `source`
+    # fournie par skills.sh : `gh api repos/{source}` suit silencieusement un
+    # renommage/transfert, donc `source` peut pointer vers un autre dépôt que
+    # celui réellement interrogé.
+    owner = repo_meta.get("owner_login") or cand["source"].split("/")[0]
+    full_name = repo_meta.get("full_name") or ""
 
     out = dict(cand, excluded=False, reason=None, score=0.0, flags=[])
+
+    if full_name and full_name.lower() != cand["source"].lower():
+        out["excluded"] = True
+        out["reason"] = (
+            f"le dépôt {cand['source']} redirige vers {full_name} : son "
+            f"identité ne peut pas être confirmée"
+        )
+        return out
+
+    trusted = is_trusted_publisher(owner, owner_meta, repo_meta, now)
+
+    if truncated and not trusted:
+        out["excluded"] = True
+        out["reason"] = (
+            "arborescence du dépôt tronquée par GitHub : la liste des "
+            "fichiers est incomplète et ne peut pas garantir l'absence de "
+            "code exécutable"
+        )
+        return out
+
+    execs = find_executables(paths)
 
     if execs and not trusted:
         out["excluded"] = True
@@ -213,7 +261,10 @@ def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
     elif owner_meta.get("type") == "Organization":
         score += 15.0
         if trusted:
-            flags.append("org vérifiée")
+            flags.append(
+                f"organisation : ≥{MIN_OWNER_AGE_DAYS} j, "
+                f"≥{MIN_PUBLIC_REPOS} dépôts publics, dépôt actif"
+            )
 
     if _age_days(owner_meta.get("created_at", ""), now) >= MIN_OWNER_AGE_DAYS:
         score += 10.0
@@ -234,7 +285,8 @@ def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
 
     if execs:
         score -= EXEC_PENALTY
-        flags.append(f"⚠ {len(execs)} fichiers exécutables")
+        mot = "fichier exécutable" if len(execs) == 1 else "fichiers exécutables"
+        flags.append(f"⚠ {len(execs)} {mot}")
     else:
         flags.append("markdown pur")
 
@@ -283,6 +335,14 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 DEFAULT_MODEL = "qwen3:8b"
 CACHE_PATH = os.path.join(os.path.expanduser("~"), ".cache", "skillscout", "cache.db")
 
+TOP_N_FOR_LLM = 5
+
+# Ollama applique son propre num_ctx par défaut (4096, sauf si le modelfile le
+# relève) et tronque silencieusement, sans erreur. 5 corps de 3000 car.
+# (~750 tokens chacun à ~4 car./token) + le prompt (~400 tokens) + la place
+# pour la réponse : 8192 couvre ça avec de la marge.
+NUM_CTX = 8192
+
 PROMPT = """Tu conseilles un développeur francophone qui cherche un skill d'agent.
 
 Son besoin : {need}
@@ -293,17 +353,19 @@ sûreté — c'est fait — mais de dire lesquels répondent réellement au beso
 
 {blocks}
 
-Réponds en français, en trois points numérotés maximum, du plus adapté au moins
+Réponds en français, en {n} points numérotés maximum, du plus adapté au moins
 adapté. Pour chacun : son identifiant, une phrase sur ce qu'il fait, et surtout
-ce qui le distingue des deux autres. Si aucun ne répond au besoin, dis-le
-franchement au lieu d'en recommander un par défaut."""
+ce qui le distingue des autres candidats listés ci-dessus. Si aucun ne répond
+au besoin, dis-le franchement au lieu d'en recommander un par défaut."""
 
 
 class OllamaError(Exception):
-    """Le serveur Ollama local est injoignable ou a répondu en erreur."""
+    """Le serveur Ollama local est injoignable, le modèle demandé n'est pas
+    installé, ou le serveur a répondu en erreur."""
 
 
 def ask_qwen(need: str, skills: list[dict], model: str = DEFAULT_MODEL) -> str:
+    skills = skills[:TOP_N_FOR_LLM]
     blocks = "\n\n".join(
         f"--- {s['skill_id']} ({s['source']}, score {s['score']}, "
         f"{', '.join(s.get('flags', []))})\n{s.get('body', '')}"
@@ -315,12 +377,22 @@ def ask_qwen(need: str, skills: list[dict], model: str = DEFAULT_MODEL) -> str:
         "messages": [{"role": "user",
                       "content": PROMPT.format(need=need, n=len(skills),
                                                blocks=blocks)}],
+        "options": {"num_ctx": NUM_CTX},
     }
     req = Request(OLLAMA_URL, data=json.dumps(payload).encode(),
                   headers={"Content-Type": "application/json"})
     try:
         with urlopen(req, timeout=300) as r:
             data = json.loads(r.read().decode())
+    except HTTPError as e:
+        if e.code == 404:
+            raise OllamaError(
+                f"Modèle « {model} » introuvable sur Ollama. Récupérez-le "
+                f"avec `ollama pull {model}`."
+            ) from e
+        raise OllamaError(
+            f"Ollama a répondu une erreur HTTP {e.code} sur {OLLAMA_URL}."
+        ) from e
     except OSError as e:
         raise OllamaError(
             f"Ollama injoignable sur {OLLAMA_URL}. Lancez `ollama serve`, "
@@ -364,15 +436,19 @@ def main(argv: list[str]) -> int:
 
     evaluated, excluded = [], 0
     for c in candidates:
-        owner = c["source"].split("/")[0]
         try:
             repo_meta = fetch_repo(c["source"], cache)
+            # L'éditeur s'identifie depuis la réponse de l'API (`owner_login`),
+            # jamais depuis la chaîne `source` de skills.sh, qui peut être
+            # périmée si le dépôt a été renommé ou transféré.
+            owner = repo_meta.get("owner_login") or c["source"].split("/")[0]
             owner_meta = fetch_owner(owner, cache)
             paths = fetch_tree(c["source"], cache)
+            truncated = fetch_tree_truncated(c["source"], cache)
         except GhError as e:
             print(f"  ignoré {c['source']} : {e}", file=sys.stderr)
             continue
-        row = evaluate(c, repo_meta, owner_meta, paths, now)
+        row = evaluate(c, repo_meta, owner_meta, paths, now, truncated)
         row["default_branch"] = repo_meta["default_branch"]
         row["paths"] = paths
         if row["excluded"]:
