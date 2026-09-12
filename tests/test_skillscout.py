@@ -178,6 +178,14 @@ class TestIsTrustedPublisher(unittest.TestCase):
         stale = {"pushed_at": iso_days_ago(400)}
         self.assertFalse(skillscout.is_trusted_publisher("inconnue", meta, stale, NOW))
 
+    def test_organisation_sans_created_at_echoue(self):
+        # Absence de created_at doit échouer le seuil d'âge, même avec repos/freshness OK.
+        meta = {"type": "Organization", "created_at": "", "public_repos": 73}
+        self.assertFalse(skillscout.is_trusted_publisher("inconnue", meta, self.FRESH, NOW))
+        # Même chose avec un timestamp illisible
+        meta2 = {"type": "Organization", "created_at": "invalid", "public_repos": 73}
+        self.assertFalse(skillscout.is_trusted_publisher("inconnue", meta2, self.FRESH, NOW))
+
 
 if __name__ == "__main__":
     unittest.main()

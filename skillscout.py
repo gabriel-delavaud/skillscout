@@ -175,8 +175,11 @@ def is_trusted_publisher(owner: str, owner_meta: dict, repo_meta: dict,
         return True
     if owner_meta.get("type") != "Organization":
         return False
+    age = _age_days(owner_meta.get("created_at", ""), now)
+    if age == float("inf"):
+        return False
     return (
-        _age_days(owner_meta.get("created_at", ""), now) >= MIN_OWNER_AGE_DAYS
+        age >= MIN_OWNER_AGE_DAYS
         and owner_meta.get("public_repos", 0) >= MIN_PUBLIC_REPOS
         and _age_days(repo_meta.get("pushed_at", ""), now) <= MAX_STALE_DAYS
     )
