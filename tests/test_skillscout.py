@@ -116,5 +116,68 @@ class TestFetchers(unittest.TestCase):
         self.assertEqual(out, ["SKILL.md", "scripts/run.sh"])
 
 
+NOW = 1789000000.0  # ~2026-09-12
+
+
+def iso_days_ago(days: float, now: float = NOW) -> str:
+    import datetime as dt
+    return dt.datetime.fromtimestamp(now - days * 86400, dt.timezone.utc) \
+             .strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class TestFindExecutables(unittest.TestCase):
+    def test_markdown_pur_ne_signale_rien(self):
+        self.assertEqual(
+            skillscout.find_executables(["SKILL.md", "references/checklist.md"]), [])
+
+    def test_detecte_par_extension(self):
+        self.assertEqual(
+            skillscout.find_executables(["SKILL.md", "run.sh", "tool.py"]),
+            ["run.sh", "tool.py"])
+
+    def test_detecte_par_repertoire(self):
+        self.assertEqual(
+            skillscout.find_executables(["scripts/thing.txt", "hooks/x.json"]),
+            ["scripts/thing.txt", "hooks/x.json"])
+
+    def test_ne_confond_pas_un_nom_de_fichier_contenant_scripts(self):
+        self.assertEqual(skillscout.find_executables(["docs/scripts-guide.md"]), [])
+
+
+class TestIsTrustedPublisher(unittest.TestCase):
+    FRESH = {"pushed_at": iso_days_ago(10)}
+
+    def test_liste_blanche_passe_meme_si_particulier(self):
+        # obra publie Superpowers depuis un compte personnel : la liste blanche
+        # doit le couvrir, sinon un skill à 280k étoiles serait écarté.
+        meta = {"type": "User", "created_at": iso_days_ago(200), "public_repos": 3}
+        self.assertTrue(skillscout.is_trusted_publisher("obra", meta, self.FRESH, NOW))
+
+    def test_liste_blanche_insensible_a_la_casse(self):
+        meta = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 50}
+        self.assertTrue(skillscout.is_trusted_publisher("Vercel", meta, self.FRESH, NOW))
+
+    def test_particulier_hors_liste_echoue(self):
+        meta = {"type": "User", "created_at": iso_days_ago(5000), "public_repos": 163}
+        self.assertFalse(skillscout.is_trusted_publisher("biggora", meta, self.FRESH, NOW))
+
+    def test_organisation_passant_les_trois_seuils(self):
+        meta = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 73}
+        self.assertTrue(skillscout.is_trusted_publisher("inconnue", meta, self.FRESH, NOW))
+
+    def test_organisation_trop_jeune_echoue(self):
+        meta = {"type": "Organization", "created_at": iso_days_ago(100), "public_repos": 73}
+        self.assertFalse(skillscout.is_trusted_publisher("inconnue", meta, self.FRESH, NOW))
+
+    def test_organisation_coquille_vide_echoue(self):
+        meta = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 2}
+        self.assertFalse(skillscout.is_trusted_publisher("inconnue", meta, self.FRESH, NOW))
+
+    def test_organisation_au_depot_abandonne_echoue(self):
+        meta = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 73}
+        stale = {"pushed_at": iso_days_ago(400)}
+        self.assertFalse(skillscout.is_trusted_publisher("inconnue", meta, stale, NOW))
+
+
 if __name__ == "__main__":
     unittest.main()

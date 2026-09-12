@@ -1,6 +1,7 @@
 """skillscout — trie les skills de skills.sh par confiance, puis fait expliquer
 un top 3 par un LLM local. Bibliothèque standard uniquement."""
 
+import datetime as _dt
 import json
 import sqlite3
 import subprocess
@@ -125,3 +126,57 @@ def fetch_tree(source: str, cache: Cache) -> list[str]:
         raw = gh_json(f"repos/{source}/git/trees/HEAD?recursive=1")
         return {"paths": [t["path"] for t in raw.get("tree", []) if t.get("path")]}
     return _cached(cache, "tree", source, build)["paths"]
+
+
+EXEC_SUFFIXES = (".sh", ".py", ".js", ".mjs", ".cjs", ".ts", ".rb",
+                 ".pl", ".ps1", ".bat", ".command")
+EXEC_DIRS = ("scripts", "hooks")
+
+TRUSTED_PUBLISHERS = frozenset({
+    "anthropics", "vercel", "vercel-labs", "etalab-ia", "firebase",
+    "google", "googleapis", "microsoft", "cloudflare", "supabase",
+    "stripe", "obra", "pbakaus",
+})
+
+MIN_OWNER_AGE_DAYS = 365
+MIN_PUBLIC_REPOS = 10
+MAX_STALE_DAYS = 365
+
+
+def find_executables(paths: list[str]) -> list[str]:
+    """Chemins constituant une surface d'exécution : extension à risque, ou
+    situés sous un répertoire `scripts/` ou `hooks/`."""
+    hits = []
+    for p in paths:
+        parts = p.split("/")
+        in_exec_dir = any(seg in EXEC_DIRS for seg in parts[:-1])
+        if p.endswith(EXEC_SUFFIXES) or in_exec_dir:
+            hits.append(p)
+    return hits
+
+
+def _age_days(iso: str, now: float) -> float:
+    """Jours écoulés depuis un horodatage ISO. Renvoie l'infini si illisible,
+    pour que l'absence de donnée échoue les seuils au lieu de les passer."""
+    if not iso:
+        return float("inf")
+    try:
+        ts = _dt.datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ") \
+                         .replace(tzinfo=_dt.timezone.utc).timestamp()
+    except ValueError:
+        return float("inf")
+    return (now - ts) / 86400
+
+
+def is_trusted_publisher(owner: str, owner_meta: dict, repo_meta: dict,
+                         now: float) -> bool:
+    """Liste blanche d'éditeurs, ou organisation passant les trois seuils."""
+    if owner.lower() in TRUSTED_PUBLISHERS:
+        return True
+    if owner_meta.get("type") != "Organization":
+        return False
+    return (
+        _age_days(owner_meta.get("created_at", ""), now) >= MIN_OWNER_AGE_DAYS
+        and owner_meta.get("public_repos", 0) >= MIN_PUBLIC_REPOS
+        and _age_days(repo_meta.get("pushed_at", ""), now) <= MAX_STALE_DAYS
+    )
