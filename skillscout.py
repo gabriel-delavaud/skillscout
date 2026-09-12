@@ -24,7 +24,15 @@ def _get_json(url: str) -> dict:
 
 
 def search_skills(query: str, limit: int = 25) -> list[dict]:
-    """Interroge skills.sh et renvoie les `limit` candidats les plus installés."""
+    """Interroge skills.sh et renvoie les `limit` candidats les plus installés.
+
+    skills.sh renvoie ses résultats triés par pertinence ; `relevance_rank`
+    capture la position de chaque candidat dans CET ordre (0 = premier
+    résultat de l'API), avant le retri par installations ci-dessous. Le tri
+    par installations et la troncature restent inchangés : `relevance_rank`
+    ne sert qu'à départager des scores égaux plus loin dans le pipeline
+    (voir `rank()`), jamais à choisir qui est tronqué ici.
+    """
     data = _get_json(SEARCH_URL.format(quote(query)))
     out = [
         {
@@ -32,8 +40,9 @@ def search_skills(query: str, limit: int = 25) -> list[dict]:
             "name": s.get("name") or "",
             "source": s.get("source") or "",
             "installs": int(s.get("installs") or 0),
+            "relevance_rank": rank,
         }
-        for s in data.get("skills", [])
+        for rank, s in enumerate(data.get("skills", []))
         if s.get("source")
     ]
     out.sort(key=lambda s: s["installs"], reverse=True)
@@ -315,8 +324,11 @@ def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
 
 
 def rank(evaluated: list[dict], top: int = 10) -> list[dict]:
+    """Trie par score décroissant ; à score égal, départage par
+    `relevance_rank` croissant (le mieux classé par skills.sh d'abord). La
+    pertinence n'est jamais un terme du score — seulement un départage."""
     kept = [e for e in evaluated if not e["excluded"]]
-    kept.sort(key=lambda e: e["score"], reverse=True)
+    kept.sort(key=lambda e: (-e["score"], e.get("relevance_rank", 0)))
     return kept[:top]
 
 

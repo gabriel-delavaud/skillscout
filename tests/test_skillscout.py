@@ -37,7 +37,22 @@ class TestSearchSkills(unittest.TestCase):
     def test_forme_des_dicts(self):
         with patch("skillscout.urlopen", return_value=fake_urlopen(self.PAYLOAD)):
             out = skillscout.search_skills("sécurité")
-        self.assertEqual(set(out[0]), {"skill_id", "name", "source", "installs"})
+        self.assertEqual(set(out[0]),
+                         {"skill_id", "name", "source", "installs", "relevance_rank"})
+
+    def test_relevance_rank_reflete_l_ordre_api_pas_les_installs(self):
+        # B1 : PAYLOAD arrive dans l'ordre petit(0), gros(1), moyen(2) — mais
+        # gros est en tête une fois trié par installs. relevance_rank doit
+        # rester fidèle à la position dans la réponse de l'API, jamais au tri
+        # par installations qui suit.
+        with patch("skillscout.urlopen", return_value=fake_urlopen(self.PAYLOAD)):
+            out = skillscout.search_skills("sécurité")
+        by_id = {s["skill_id"]: s["relevance_rank"] for s in out}
+        self.assertEqual(by_id, {"petit": 0, "gros": 1, "moyen": 2})
+        # out lui-même est trié par installs (gros, moyen, petit) : le rang
+        # de pertinence ne suit pas cet ordre de sortie.
+        self.assertEqual([s["skill_id"] for s in out], ["gros", "moyen", "petit"])
+        self.assertEqual([s["relevance_rank"] for s in out], [1, 2, 0])
 
     def test_liste_vide_si_aucun_resultat(self):
         with patch("skillscout.urlopen", return_value=fake_urlopen({"skills": []})):
@@ -385,6 +400,31 @@ class TestRank(unittest.TestCase):
         ]
         out = skillscout.rank(rows, top=2)
         self.assertEqual([r["skill_id"] for r in out], ["c", "a"])
+
+    def test_egalite_de_score_departagee_par_relevance_rank(self):
+        # B2 : à score strictement égal, le candidat le mieux classé par
+        # skills.sh (relevance_rank le plus bas) doit sortir en premier.
+        # Sans le départage, un tri stable conserverait l'ordre d'entrée
+        # (a, b, c), ce que ce test doit distinguer de l'ordre attendu.
+        rows = [
+            {"skill_id": "a", "excluded": False, "score": 10.0, "relevance_rank": 2},
+            {"skill_id": "b", "excluded": False, "score": 10.0, "relevance_rank": 0},
+            {"skill_id": "c", "excluded": False, "score": 10.0, "relevance_rank": 1},
+        ]
+        out = skillscout.rank(rows)
+        self.assertEqual([r["skill_id"] for r in out], ["b", "c", "a"])
+
+    def test_le_score_l_emporte_toujours_sur_la_pertinence(self):
+        # La pertinence ne départage qu'à score égal — un score supérieur
+        # gagne toujours, même avec un relevance_rank moins bon.
+        rows = [
+            {"skill_id": "haut_score", "excluded": False, "score": 20.0,
+             "relevance_rank": 9},
+            {"skill_id": "pertinent", "excluded": False, "score": 10.0,
+             "relevance_rank": 0},
+        ]
+        out = skillscout.rank(rows)
+        self.assertEqual([r["skill_id"] for r in out], ["haut_score", "pertinent"])
 
 
 class TestLocateSkillMd(unittest.TestCase):

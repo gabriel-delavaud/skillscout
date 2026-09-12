@@ -107,6 +107,21 @@ Les échelles logarithmiques évitent qu'un dépôt à 100 000 étoiles écrase 
 reste : la différence entre 10 et 100 étoiles compte plus que celle entre 10 000
 et 100 000.
 
+### Égalité de score : la pertinence comme simple départage
+
+`search_skills` reçoit les candidats de skills.sh déjà triés par pertinence,
+puis les retrie par installations avant de tronquer à 25 — le signal de
+pertinence de l'API n'atteint donc jamais `evaluate` tel quel. Pour ne pas
+réimporter le biais de popularité que ce tri existe justement pour corriger,
+**la pertinence n'est pas un terme du score** : elle sert uniquement à
+départager deux candidats dont le score est strictement égal. `search_skills`
+capture la position de chaque candidat dans l'ordre de réponse de l'API sous
+la clé `relevance_rank` (0 = premier résultat), avant le tri par installations
+et sans modifier ce tri ni la troncature. `rank()` trie par score décroissant
+puis, à égalité, par `relevance_rank` croissant. Un score supérieur l'emporte
+toujours, quel que soit le `relevance_rank` : ce n'est qu'un départage, pas un
+correctif complet à la perte du signal de pertinence.
+
 ## Sources de données
 
 | Source | Accès | Limite |
@@ -128,10 +143,11 @@ skillscout --json "…"                        # sortie machine
 ```
 
 Sortie par défaut : le top 10 en liste compacte d'abord — score, source et
-drapeaux (`⚠ 3 fichiers exécutables`, `org vérifiée`, `markdown pur`) — puis le
-top 3 expliqué par Qwen. Cet ordre est délibéré : le tri est instantané, la
-synthèse locale prend une trentaine de secondes. L'utilisateur a donc quelque
-chose à lire immédiatement plutôt qu'un écran vide.
+drapeaux (`⚠ 3 fichiers exécutables`, `organisation : ≥365 j, ≥10 dépôts
+publics, dépôt actif`, `markdown pur`) — puis le top 3 expliqué par Qwen. Cet
+ordre est délibéré : le tri est instantané, la synthèse locale prend une
+trentaine de secondes. L'utilisateur a donc quelque chose à lire immédiatement
+plutôt qu'un écran vide.
 
 ## Contraintes globales
 
