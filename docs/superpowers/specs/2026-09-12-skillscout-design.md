@@ -120,8 +120,11 @@ skillscout --no-llm "ranger des fichiers"   # top 10 brut, sans Qwen
 skillscout --json "…"                        # sortie machine
 ```
 
-Sortie par défaut : le top 3 de Qwen avec les différences expliquées, puis le
-top 10 en liste compacte avec score et drapeaux (`⚠ 3 scripts`, `org vérifiée`).
+Sortie par défaut : le top 10 en liste compacte d'abord — score, source et
+drapeaux (`⚠ 3 fichiers exécutables`, `org vérifiée`, `markdown pur`) — puis le
+top 3 expliqué par Qwen. Cet ordre est délibéré : le tri est instantané, la
+synthèse locale prend une trentaine de secondes. L'utilisateur a donc quelque
+chose à lire immédiatement plutôt qu'un écran vide.
 
 ## Contraintes globales
 
@@ -143,7 +146,7 @@ top 10 en liste compacte avec score et drapeaux (`⚠ 3 scripts`, `org vérifié
 | `skillscout.py` | tout le pipeline, en fonctions pures autant que possible |
 | `tests/test_skillscout.py` | tests unitaires, réseau simulé |
 | `~/bin/skillscout` | lanceur de trois lignes appelant le module |
-| `cache.db` | cache SQLite des métadonnées GitHub (gitignoré) |
+| `~/.cache/skillscout/cache.db` | cache SQLite des métadonnées GitHub — hors du dépôt : un outil utilisateur n'écrit pas dans ses propres sources |
 
 Un seul module, conformément à l'option A. Il porte l'extension `.py` pour être
 importable par `unittest` ; le nom de commande vient du lanceur dans `~/bin`.
