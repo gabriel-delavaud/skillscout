@@ -273,3 +273,148 @@ def fetch_skill_md(source: str, branch: str, path: str,
     req = Request(url, headers={"User-Agent": "skillscout"})
     with urlopen(req, timeout=HTTP_TIMEOUT) as r:
         return r.read().decode("utf-8", "replace")[:limit]
+
+
+import argparse
+import os
+import sys
+
+OLLAMA_URL = "http://localhost:11434/api/chat"
+DEFAULT_MODEL = "qwen3:8b"
+CACHE_PATH = os.path.join(os.path.expanduser("~"), ".cache", "skillscout", "cache.db")
+
+PROMPT = """Tu conseilles un développeur francophone qui cherche un skill d'agent.
+
+Son besoin : {need}
+
+Voici {n} candidats, déjà filtrés sur leur provenance (l'éditeur est fiable ou
+le dépôt ne contient aucun code exécutable). Ton travail n'est PAS de juger leur
+sûreté — c'est fait — mais de dire lesquels répondent réellement au besoin.
+
+{blocks}
+
+Réponds en français, en trois points numérotés maximum, du plus adapté au moins
+adapté. Pour chacun : son identifiant, une phrase sur ce qu'il fait, et surtout
+ce qui le distingue des deux autres. Si aucun ne répond au besoin, dis-le
+franchement au lieu d'en recommander un par défaut."""
+
+
+class OllamaError(Exception):
+    """Le serveur Ollama local est injoignable ou a répondu en erreur."""
+
+
+def ask_qwen(need: str, skills: list[dict], model: str = DEFAULT_MODEL) -> str:
+    blocks = "\n\n".join(
+        f"--- {s['skill_id']} ({s['source']}, score {s['score']}, "
+        f"{', '.join(s.get('flags', []))})\n{s.get('body', '')}"
+        for s in skills
+    )
+    payload = {
+        "model": model,
+        "stream": False,
+        "messages": [{"role": "user",
+                      "content": PROMPT.format(need=need, n=len(skills),
+                                               blocks=blocks)}],
+    }
+    req = Request(OLLAMA_URL, data=json.dumps(payload).encode(),
+                  headers={"Content-Type": "application/json"})
+    try:
+        with urlopen(req, timeout=300) as r:
+            data = json.loads(r.read().decode())
+    except OSError as e:
+        raise OllamaError(
+            f"Ollama injoignable sur {OLLAMA_URL}. Lancez `ollama serve`, "
+            f"ou utilisez --no-llm."
+        ) from e
+    return (data.get("message") or {}).get("content", "").strip()
+
+
+def format_top10(rows: list[dict]) -> str:
+    lines = []
+    for i, r in enumerate(rows, 1):
+        lines.append(
+            f"{i:2}. {r['skill_id']:<34} {r['score']:>6.1f}  "
+            f"{r['source']:<32} {' · '.join(r.get('flags', []))}"
+        )
+    return "\n".join(lines)
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="skillscout",
+        description="Trie les skills de skills.sh par confiance, puis fait "
+                    "expliquer un top 3 par un LLM local.")
+    ap.add_argument("besoin", help="ce que le skill doit savoir faire")
+    ap.add_argument("--no-llm", action="store_true",
+                    help="top 10 brut, sans passer par Qwen")
+    ap.add_argument("--json", action="store_true", help="sortie machine")
+    ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument("--limit", type=int, default=25,
+                    help="candidats examinés (borne les appels GitHub)")
+    args = ap.parse_args(argv)
+
+    os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+    cache = Cache(CACHE_PATH)
+    now = time.time()
+
+    candidates = search_skills(args.besoin, limit=args.limit)
+    if not candidates:
+        print("Aucun candidat sur skills.sh pour cette recherche.", file=sys.stderr)
+        return 1
+
+    evaluated, excluded = [], 0
+    for c in candidates:
+        owner = c["source"].split("/")[0]
+        try:
+            repo_meta = fetch_repo(c["source"], cache)
+            owner_meta = fetch_owner(owner, cache)
+            paths = fetch_tree(c["source"], cache)
+        except GhError as e:
+            print(f"  ignoré {c['source']} : {e}", file=sys.stderr)
+            continue
+        row = evaluate(c, repo_meta, owner_meta, paths, now)
+        row["default_branch"] = repo_meta["default_branch"]
+        row["paths"] = paths
+        if row["excluded"]:
+            excluded += 1
+        evaluated.append(row)
+
+    top = rank(evaluated, top=10)
+    if not top:
+        print(f"Les {excluded} candidat(s) examiné(s) ont tous été écartés.",
+              file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps([{k: v for k, v in r.items() if k != "paths"}
+                          for r in top], ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"\nTOP 10 par confiance ({excluded} écarté(s) sur "
+          f"{len(candidates)} examiné(s))\n")
+    print(format_top10(top))
+
+    if args.no_llm:
+        return 0
+
+    for r in top:
+        path = locate_skill_md(r["paths"], r["skill_id"])
+        if path is None:
+            r["body"] = "(SKILL.md introuvable — index skills.sh probablement périmé)"
+            continue
+        try:
+            r["body"] = fetch_skill_md(r["source"], r["default_branch"], path)
+        except OSError:
+            r["body"] = "(SKILL.md illisible)"
+
+    try:
+        print(f"\n--- Analyse par {args.model} (local, gratuit) ---\n")
+        print(ask_qwen(args.besoin, top, model=args.model))
+    except OllamaError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

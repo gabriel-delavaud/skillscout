@@ -1,4 +1,4 @@
-import json, subprocess, sys, tempfile, unittest, os
+import json, shutil, subprocess, sys, tempfile, unittest, os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -269,6 +269,75 @@ class TestFetchSkillMd(unittest.TestCase):
         with patch("skillscout.urlopen", return_value=cm):
             out = skillscout.fetch_skill_md("a/b", "main", "SKILL.md", limit=100)
         self.assertEqual(len(out), 100)
+
+
+class TestAskQwen(unittest.TestCase):
+    ROWS = [{"skill_id": "a", "source": "x/y", "score": 60.0,
+             "flags": ["markdown pur"], "body": "# A\nfait des choses"}]
+
+    def test_renvoie_le_message_du_modele(self):
+        cm = MagicMock()
+        cm.read.return_value = json.dumps(
+            {"message": {"content": "1. a — le plus sûr"}}).encode()
+        cm.__enter__ = lambda s: cm
+        cm.__exit__ = lambda s, *a: False
+        with patch("skillscout.urlopen", return_value=cm):
+            out = skillscout.ask_qwen("sécurité", self.ROWS)
+        self.assertIn("le plus sûr", out)
+
+    def test_leve_ollamaerror_si_serveur_muet(self):
+        with patch("skillscout.urlopen", side_effect=OSError("refusé")):
+            with self.assertRaises(skillscout.OllamaError):
+                skillscout.ask_qwen("sécurité", self.ROWS)
+
+
+class TestFormatTop10(unittest.TestCase):
+    def test_affiche_score_source_et_drapeaux(self):
+        out = skillscout.format_top10([
+            {"skill_id": "a", "source": "x/y", "score": 61.5,
+             "flags": ["markdown pur"], "installs": 12}])
+        self.assertIn("x/y", out)
+        self.assertIn("61.5", out)
+        self.assertIn("markdown pur", out)
+
+
+class TestMain(unittest.TestCase):
+    # Ruling du contrôleur : CACHE_PATH ne doit jamais pointer vers le vrai
+    # ~/.cache/skillscout/cache.db pendant les tests. On isole chaque test
+    # dans un répertoire tempfile, jamais dans le home de l'utilisateur.
+    def setUp(self):
+        self.cache_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache_dir, ignore_errors=True)
+        patcher = patch("skillscout.CACHE_PATH",
+                        os.path.join(self.cache_dir, "cache.db"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_no_llm_court_circuite_ollama(self):
+        cand = [{"skill_id": "s", "name": "s", "source": "etalab-ia/skills", "installs": 13}]
+        repo = {"stars": 18, "pushed_at": iso_days_ago(1),
+                "owner_type": "Organization", "default_branch": "main"}
+        owner = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 73}
+        with patch("skillscout.search_skills", return_value=cand), \
+             patch("skillscout.fetch_repo", return_value=repo), \
+             patch("skillscout.fetch_owner", return_value=owner), \
+             patch("skillscout.fetch_tree", return_value=["skills/s/SKILL.md"]), \
+             patch("skillscout.ask_qwen") as q:
+            code = skillscout.main(["--no-llm", "sécurité"])
+        self.assertEqual(code, 0)
+        q.assert_not_called()
+
+    def test_code_1_si_tout_est_ecarte(self):
+        cand = [{"skill_id": "s", "name": "s", "source": "inconnu/repo", "installs": 3}]
+        repo = {"stars": 0, "pushed_at": iso_days_ago(900),
+                "owner_type": "User", "default_branch": "main"}
+        owner = {"type": "User", "created_at": iso_days_ago(100), "public_repos": 1}
+        with patch("skillscout.search_skills", return_value=cand), \
+             patch("skillscout.fetch_repo", return_value=repo), \
+             patch("skillscout.fetch_owner", return_value=owner), \
+             patch("skillscout.fetch_tree", return_value=["SKILL.md", "run.sh"]):
+            code = skillscout.main(["--no-llm", "sécurité"])
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":
