@@ -187,5 +187,59 @@ class TestIsTrustedPublisher(unittest.TestCase):
         self.assertFalse(skillscout.is_trusted_publisher("inconnue", meta2, self.FRESH, NOW))
 
 
+class TestEvaluate(unittest.TestCase):
+    CAND = {"skill_id": "s", "name": "s", "source": "who/repo", "installs": 100}
+    ORG_OK = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 73}
+    USER = {"type": "User", "created_at": iso_days_ago(2000), "public_repos": 5}
+    REPO = {"stars": 100, "pushed_at": iso_days_ago(10),
+            "owner_type": "Organization", "default_branch": "main"}
+
+    def test_particulier_avec_scripts_est_exclu(self):
+        out = skillscout.evaluate(self.CAND, self.REPO, self.USER,
+                                  ["SKILL.md", "run.sh"], NOW)
+        self.assertTrue(out["excluded"])
+        self.assertIn("exécutable", out["reason"])
+
+    def test_particulier_sans_script_est_garde(self):
+        out = skillscout.evaluate(self.CAND, self.REPO, self.USER,
+                                  ["SKILL.md"], NOW)
+        self.assertFalse(out["excluded"])
+
+    def test_organisation_avec_scripts_est_gardee(self):
+        out = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
+                                  ["SKILL.md", "run.sh"], NOW)
+        self.assertFalse(out["excluded"])
+
+    def test_penalite_pour_les_scripts(self):
+        avec = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
+                                   ["SKILL.md", "run.sh"], NOW)["score"]
+        sans = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
+                                   ["SKILL.md"], NOW)["score"]
+        self.assertAlmostEqual(sans - avec, 20.0, places=6)
+
+    def test_liste_blanche_domine_le_score(self):
+        cand = dict(self.CAND, source="vercel-labs/skills")
+        listee = skillscout.evaluate(cand, self.REPO, self.ORG_OK, ["SKILL.md"], NOW)["score"]
+        autre = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK, ["SKILL.md"], NOW)["score"]
+        self.assertGreater(listee, autre + 30)
+
+    def test_drapeaux_lisibles(self):
+        out = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
+                                  ["SKILL.md", "a.sh", "b.py"], NOW)
+        self.assertIn("⚠ 2 fichiers exécutables", out["flags"])
+        self.assertIn("org vérifiée", out["flags"])
+
+
+class TestRank(unittest.TestCase):
+    def test_ecarte_les_exclus_trie_et_tronque(self):
+        rows = [
+            {"skill_id": "a", "excluded": False, "score": 10.0},
+            {"skill_id": "b", "excluded": True, "score": 99.0},
+            {"skill_id": "c", "excluded": False, "score": 50.0},
+        ]
+        out = skillscout.rank(rows, top=2)
+        self.assertEqual([r["skill_id"] for r in out], ["c", "a"])
+
+
 if __name__ == "__main__":
     unittest.main()

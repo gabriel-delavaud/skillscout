@@ -3,6 +3,7 @@ un top 3 par un LLM local. Bibliothèque standard uniquement."""
 
 import datetime as _dt
 import json
+import math
 import sqlite3
 import subprocess
 import time
@@ -183,3 +184,66 @@ def is_trusted_publisher(owner: str, owner_meta: dict, repo_meta: dict,
         and owner_meta.get("public_repos", 0) >= MIN_PUBLIC_REPOS
         and _age_days(repo_meta.get("pushed_at", ""), now) <= MAX_STALE_DAYS
     )
+
+
+EXEC_PENALTY = 20.0
+
+
+def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
+             paths: list[str], now: float) -> dict:
+    """Applique l'exclusion stricte puis calcule le score de classement."""
+    owner = cand["source"].split("/")[0]
+    execs = find_executables(paths)
+    trusted = is_trusted_publisher(owner, owner_meta, repo_meta, now)
+
+    out = dict(cand, excluded=False, reason=None, score=0.0, flags=[])
+
+    if execs and not trusted:
+        out["excluded"] = True
+        out["reason"] = (f"{len(execs)} fichier(s) exécutable(s) et éditeur "
+                         f"non vérifié ({owner})")
+        return out
+
+    score = 0.0
+    flags: list[str] = []
+
+    if owner.lower() in TRUSTED_PUBLISHERS:
+        score += 50.0
+        flags.append("éditeur en liste blanche")
+    elif owner_meta.get("type") == "Organization":
+        score += 15.0
+        if trusted:
+            flags.append("org vérifiée")
+
+    if _age_days(owner_meta.get("created_at", ""), now) >= MIN_OWNER_AGE_DAYS:
+        score += 10.0
+    if owner_meta.get("public_repos", 0) >= MIN_PUBLIC_REPOS:
+        score += 5.0
+
+    score += min(15.0, 5.0 * math.log10(1 + repo_meta.get("stars", 0)))
+
+    stale = _age_days(repo_meta.get("pushed_at", ""), now)
+    if stale <= 90:
+        score += 10.0
+    elif stale <= MAX_STALE_DAYS:
+        score += 5.0
+    else:
+        flags.append("⚠ non maintenu depuis plus d'un an")
+
+    score += min(10.0, 2.5 * math.log10(1 + cand.get("installs", 0)))
+
+    if execs:
+        score -= EXEC_PENALTY
+        flags.append(f"⚠ {len(execs)} fichiers exécutables")
+    else:
+        flags.append("markdown pur")
+
+    out["score"] = round(score, 2)
+    out["flags"] = flags
+    return out
+
+
+def rank(evaluated: list[dict], top: int = 10) -> list[dict]:
+    kept = [e for e in evaluated if not e["excluded"]]
+    kept.sort(key=lambda e: e["score"], reverse=True)
+    return kept[:top]
