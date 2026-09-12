@@ -151,6 +151,34 @@ class TestFetchers(unittest.TestCase):
             skillscout.fetch_tree_truncated("a/b", self.cache)
         self.assertEqual(g.call_count, 1)
 
+    def test_entree_repo_pre_fix_est_ignoree_pas_servie(self):
+        # A1 : une entrée "repo" écrite avant F1 (sans owner_login/full_name)
+        # ne doit jamais être servie telle quelle — le namespace versionné
+        # (CACHE_SCHEMA) la rend invisible, donc fetch_repo rappelle `gh` et
+        # reconstruit une entrée complète plutôt que de renvoyer
+        # owner_login=None.
+        self.cache.put("repo", "a/b", {  # forme pré-F1, namespace non versionné
+            "stars": 1, "pushed_at": "", "owner_type": "User",
+            "default_branch": "main",
+        })
+        raw = {"stargazers_count": 9, "pushed_at": "2026-01-01T00:00:00Z",
+               "owner": {"type": "Organization", "login": "acme"},
+               "default_branch": "main", "full_name": "a/b"}
+        with patch("skillscout.gh_json", return_value=raw) as g:
+            out = skillscout.fetch_repo("a/b", self.cache)
+        g.assert_called_once()
+        self.assertEqual(out["owner_login"], "acme")
+        self.assertEqual(out["full_name"], "a/b")
+
+    def test_fetch_tree_truncated_entree_sans_champ_lue_comme_tronquee(self):
+        # A3 : une entrée de cache (même au schéma courant) dépourvue de la
+        # clé "truncated" doit être lue comme tronquée — jamais lever de
+        # KeyError. Reproduit la forme des 18 entrées "tree" pré-F2 trouvées
+        # dans le cache réel de l'utilisateur.
+        self.cache.put(f"tree:v{skillscout.CACHE_SCHEMA}", "a/b",
+                       {"paths": ["SKILL.md"]})
+        self.assertTrue(skillscout.fetch_tree_truncated("a/b", self.cache))
+
 
 NOW = 1789000000.0  # ~2026-09-12
 
@@ -236,48 +264,53 @@ class TestEvaluate(unittest.TestCase):
     CAND = {"skill_id": "s", "name": "s", "source": "who/repo", "installs": 100}
     ORG_OK = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 73}
     USER = {"type": "User", "created_at": iso_days_ago(2000), "public_repos": 5}
+    # Forme réelle produite par fetch_repo() : full_name/owner_login présents
+    # et cohérents avec CAND["source"], comme le renvoie toujours l'API.
     REPO = {"stars": 100, "pushed_at": iso_days_ago(10),
-            "owner_type": "Organization", "default_branch": "main"}
+            "owner_type": "Organization", "default_branch": "main",
+            "full_name": "who/repo", "owner_login": "who"}
 
     def test_particulier_avec_scripts_est_exclu(self):
         out = skillscout.evaluate(self.CAND, self.REPO, self.USER,
-                                  ["SKILL.md", "run.sh"], NOW)
+                                  ["SKILL.md", "run.sh"], NOW, False)
         self.assertTrue(out["excluded"])
         self.assertIn("exécutable", out["reason"])
 
     def test_particulier_sans_script_est_garde(self):
         out = skillscout.evaluate(self.CAND, self.REPO, self.USER,
-                                  ["SKILL.md"], NOW)
+                                  ["SKILL.md"], NOW, False)
         self.assertFalse(out["excluded"])
 
     def test_organisation_avec_scripts_est_gardee(self):
         out = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
-                                  ["SKILL.md", "run.sh"], NOW)
+                                  ["SKILL.md", "run.sh"], NOW, False)
         self.assertFalse(out["excluded"])
 
     def test_penalite_pour_les_scripts(self):
         avec = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
-                                   ["SKILL.md", "run.sh"], NOW)["score"]
+                                   ["SKILL.md", "run.sh"], NOW, False)["score"]
         sans = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
-                                   ["SKILL.md"], NOW)["score"]
+                                   ["SKILL.md"], NOW, False)["score"]
         self.assertAlmostEqual(sans - avec, 20.0, places=6)
 
     def test_liste_blanche_domine_le_score(self):
         cand = dict(self.CAND, source="vercel-labs/skills")
-        listee = skillscout.evaluate(cand, self.REPO, self.ORG_OK, ["SKILL.md"], NOW)["score"]
-        autre = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK, ["SKILL.md"], NOW)["score"]
+        repo = dict(self.REPO, full_name="vercel-labs/skills", owner_login="vercel-labs")
+        listee = skillscout.evaluate(cand, repo, self.ORG_OK, ["SKILL.md"], NOW, False)["score"]
+        autre = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
+                                    ["SKILL.md"], NOW, False)["score"]
         self.assertGreater(listee, autre + 30)
 
     def test_drapeaux_lisibles(self):
         out = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
-                                  ["SKILL.md", "a.sh", "b.py"], NOW)
+                                  ["SKILL.md", "a.sh", "b.py"], NOW, False)
         self.assertIn("⚠ 2 fichiers exécutables", out["flags"])
 
     def test_drapeau_organisation_est_factuel_pas_un_verdict(self):
         # F4 : « org vérifiée » prétendait à une vérification qui n'a jamais
         # eu lieu ; le nouveau libellé ne doit énoncer que les seuils mesurés.
         out = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
-                                  ["SKILL.md"], NOW)
+                                  ["SKILL.md"], NOW, False)
         self.assertNotIn("org vérifiée", out["flags"])
         self.assertIn(
             f"organisation : ≥{skillscout.MIN_OWNER_AGE_DAYS} j, "
@@ -287,7 +320,7 @@ class TestEvaluate(unittest.TestCase):
 
     def test_drapeau_singulier_pour_un_seul_fichier_executable(self):
         out = skillscout.evaluate(self.CAND, self.REPO, self.ORG_OK,
-                                  ["SKILL.md", "a.sh"], NOW)
+                                  ["SKILL.md", "a.sh"], NOW, False)
         self.assertIn("⚠ 1 fichier exécutable", out["flags"])
         self.assertNotIn("⚠ 1 fichiers exécutables", out["flags"])
 
@@ -300,16 +333,35 @@ class TestEvaluate(unittest.TestCase):
         repo_redirige = dict(self.REPO, full_name="attacker/foo",
                              owner_login="attacker")
         out = skillscout.evaluate(cand, repo_redirige, self.ORG_OK,
-                                  ["SKILL.md"], NOW)
+                                  ["SKILL.md"], NOW, False)
         self.assertTrue(out["excluded"])
         self.assertIn("redirige", out["reason"])
 
     def test_owner_vient_de_repo_meta_pas_de_source(self):
-        # Même sans redirection détectée (full_name absent ici), l'éditeur
-        # utilisé pour le score/la confiance doit venir de `owner_login`.
+        # A4/F1 : même sans redirection (full_name cohérent avec `source`),
+        # l'éditeur utilisé pour le score/la confiance doit venir de
+        # `owner_login`, jamais reparsé depuis `source`. Forme réelle :
+        # full_name ET owner_login présents, comme fetch_repo() les produit
+        # toujours — avant le correctif A2, seul full_name absent pouvait
+        # atteindre ce chemin, un état que la production ne produit jamais.
         cand = dict(self.CAND, source="vercel/foo")
-        repo = dict(self.REPO, owner_login="pasvercel")
-        out = skillscout.evaluate(cand, repo, self.USER, ["SKILL.md"], NOW)
+        repo = dict(self.REPO, full_name="vercel/foo", owner_login="pasvercel")
+        out = skillscout.evaluate(cand, repo, self.USER, ["SKILL.md"], NOW, False)
+        self.assertNotIn("éditeur en liste blanche", out["flags"])
+
+    def test_identite_manquante_exclut_le_candidat(self):
+        # A2 : F1 avait un repli silencieux sur cand["source"].split("/")[0]
+        # quand owner_login/full_name manquaient (ex. entrée de cache pré-F1),
+        # ce qui désactivait complètement le contrôle de redirection. Sans
+        # repli, l'absence de l'un ou l'autre doit échouer fermé, comme une
+        # arborescence tronquée pour un éditeur non vérifié.
+        repo_sans_identite = {"stars": 100, "pushed_at": iso_days_ago(10),
+                              "owner_type": "Organization",
+                              "default_branch": "main"}
+        out = skillscout.evaluate(self.CAND, repo_sans_identite, self.ORG_OK,
+                                  ["SKILL.md"], NOW, False)
+        self.assertTrue(out["excluded"])
+        self.assertIn("identité", out["reason"])
         self.assertNotIn("éditeur en liste blanche", out["flags"])
 
     def test_arbre_tronque_exclut_si_editeur_non_confiance(self):
@@ -483,7 +535,8 @@ class TestMain(unittest.TestCase):
     def test_no_llm_court_circuite_ollama(self):
         cand = [{"skill_id": "s", "name": "s", "source": "etalab-ia/skills", "installs": 13}]
         repo = {"stars": 18, "pushed_at": iso_days_ago(1),
-                "owner_type": "Organization", "default_branch": "main"}
+                "owner_type": "Organization", "default_branch": "main",
+                "full_name": "etalab-ia/skills", "owner_login": "etalab-ia"}
         owner = {"type": "Organization", "created_at": iso_days_ago(2000), "public_repos": 73}
         with patch("skillscout.search_skills", return_value=cand), \
              patch("skillscout.fetch_repo", return_value=repo), \
@@ -498,7 +551,8 @@ class TestMain(unittest.TestCase):
     def test_code_1_si_tout_est_ecarte(self):
         cand = [{"skill_id": "s", "name": "s", "source": "inconnu/repo", "installs": 3}]
         repo = {"stars": 0, "pushed_at": iso_days_ago(900),
-                "owner_type": "User", "default_branch": "main"}
+                "owner_type": "User", "default_branch": "main",
+                "full_name": "inconnu/repo", "owner_login": "inconnu"}
         owner = {"type": "User", "created_at": iso_days_ago(100), "public_repos": 1}
         with patch("skillscout.search_skills", return_value=cand), \
              patch("skillscout.fetch_repo", return_value=repo), \

@@ -43,6 +43,12 @@ def search_skills(query: str, limit: int = 25) -> list[dict]:
 CACHE_TTL = 7 * 86400
 GH_TIMEOUT = 30
 
+# Incrémenté chaque fois que la forme des dicts mis en cache change (ex. F1 a
+# ajouté owner_login/full_name à "repo", F2 a ajouté "truncated" à "tree").
+# Fold dans le namespace par `_cached` : toute entrée écrite sous un schéma
+# antérieur devient invisible d'un coup, sans migration ni purge manuelle.
+CACHE_SCHEMA = 2
+
 
 class GhError(Exception):
     """`gh` est absent, non authentifié, ou a répondu en erreur."""
@@ -93,6 +99,7 @@ def gh_json(api_path: str):
 
 
 def _cached(cache: Cache, kind: str, key: str, build):
+    kind = f"{kind}:v{CACHE_SCHEMA}"
     hit = cache.get(kind, key)
     if hit is not None:
         return hit
@@ -149,7 +156,10 @@ def fetch_tree(source: str, cache: Cache) -> list[str]:
 def fetch_tree_truncated(source: str, cache: Cache) -> bool:
     """Indique si l'arborescence renvoyée par `fetch_tree` est tronquée par
     GitHub, et donc incomplète — partage le même cache que `fetch_tree`."""
-    return _fetch_tree_cached(source, cache)["truncated"]
+    # `.get(..., True)` : une entrée de cache écrite avant l'introduction de
+    # ce champ (ou toute entrée qui en serait dépourvue) doit être lue comme
+    # tronquée, jamais comme sûre — et jamais lever de KeyError.
+    return _fetch_tree_cached(source, cache).get("truncated", True)
 
 
 EXEC_SUFFIXES = (".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".cjs", ".ts",
@@ -214,18 +224,27 @@ EXEC_PENALTY = 20.0
 
 
 def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
-             paths: list[str], now: float, truncated: bool = False) -> dict:
+             paths: list[str], now: float, truncated: bool) -> dict:
     """Applique l'exclusion stricte puis calcule le score de classement."""
     # L'identité vient de l'API (`repo_meta`), jamais de la chaîne `source`
     # fournie par skills.sh : `gh api repos/{source}` suit silencieusement un
     # renommage/transfert, donc `source` peut pointer vers un autre dépôt que
-    # celui réellement interrogé.
-    owner = repo_meta.get("owner_login") or cand["source"].split("/")[0]
+    # celui réellement interrogé. Aucun repli sur `cand["source"]` : c'est
+    # précisément la chaîne non fiable que ce contrôle existe pour éviter.
+    owner = repo_meta.get("owner_login") or ""
     full_name = repo_meta.get("full_name") or ""
 
     out = dict(cand, excluded=False, reason=None, score=0.0, flags=[])
 
-    if full_name and full_name.lower() != cand["source"].lower():
+    if not owner or not full_name:
+        out["excluded"] = True
+        out["reason"] = (
+            f"métadonnées GitHub incomplètes pour {cand['source']} : "
+            f"l'identité de l'éditeur ne peut pas être confirmée"
+        )
+        return out
+
+    if full_name.lower() != cand["source"].lower():
         out["excluded"] = True
         out["reason"] = (
             f"le dépôt {cand['source']} redirige vers {full_name} : son "
@@ -440,9 +459,11 @@ def main(argv: list[str]) -> int:
             repo_meta = fetch_repo(c["source"], cache)
             # L'éditeur s'identifie depuis la réponse de l'API (`owner_login`),
             # jamais depuis la chaîne `source` de skills.sh, qui peut être
-            # périmée si le dépôt a été renommé ou transféré.
-            owner = repo_meta.get("owner_login") or c["source"].split("/")[0]
-            owner_meta = fetch_owner(owner, cache)
+            # périmée si le dépôt a été renommé ou transféré. Si l'API ne l'a
+            # pas renvoyé, on n'interroge pas `users/` avec une chaîne vide :
+            # `evaluate()` écartera le candidat faute d'identité confirmée.
+            owner = repo_meta.get("owner_login") or ""
+            owner_meta = fetch_owner(owner, cache) if owner else {}
             paths = fetch_tree(c["source"], cache)
             truncated = fetch_tree_truncated(c["source"], cache)
         except GhError as e:
@@ -473,7 +494,7 @@ def main(argv: list[str]) -> int:
     if args.no_llm:
         return 0
 
-    for r in top:
+    for r in top[:TOP_N_FOR_LLM]:
         path = locate_skill_md(r["paths"], r["skill_id"])
         if path is None:
             r["body"] = "(SKILL.md introuvable — index skills.sh probablement périmé)"
