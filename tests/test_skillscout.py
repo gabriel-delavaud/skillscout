@@ -316,7 +316,7 @@ class TestEvaluate(unittest.TestCase):
 
     def test_particulier_sans_script_est_garde(self):
         out = skillscout.evaluate(self.CAND, self.REPO, self.USER,
-                                  ["SKILL.md"], NOW, False)
+                                  ["SKILL.md"], NOW, False, "# s\nLis le code.")
         self.assertFalse(out["excluded"])
 
     def test_organisation_avec_scripts_est_gardee(self):
@@ -384,7 +384,8 @@ class TestEvaluate(unittest.TestCase):
         # atteindre ce chemin, un état que la production ne produit jamais.
         cand = dict(self.CAND, source="vercel/foo")
         repo = dict(self.REPO, full_name="vercel/foo", owner_login="pasvercel")
-        out = skillscout.evaluate(cand, repo, self.USER, ["SKILL.md"], NOW, False)
+        out = skillscout.evaluate(cand, repo, self.USER, ["SKILL.md"], NOW, False,
+                                  "# s\nLis le code.")
         self.assertNotIn("éditeur en liste blanche", out["flags"])
 
     def test_identite_manquante_exclut_le_candidat(self):
@@ -773,9 +774,15 @@ class TestEvaluateContenu(unittest.TestCase):
                                skillscout.CONTENT_PENALTY, places=6)
         self.assertIn("suppression récursive (rm -rf)", out["content_hits"])
 
-    def test_body_absent_est_signale(self):
-        out = self._eval(self.USER, ["SKILL.md"], None)
+    def test_body_absent_chez_un_editeur_de_confiance_est_signale(self):
+        out = self._eval(self.ORG_OK, ["SKILL.md"], None)
+        self.assertFalse(out["excluded"])
         self.assertIn("⚠ SKILL.md non lu", out["flags"])
+
+    def test_texte_non_verifie_ecarte_un_editeur_non_verifie(self):
+        out = self._eval(self.USER, ["SKILL.md"], None)
+        self.assertTrue(out["excluded"])
+        self.assertIn("SKILL.md", out["reason"])
 
     def test_body_present_n_est_pas_signale_non_lu(self):
         out = self._eval(self.USER, ["SKILL.md"], self.CLEAN)
@@ -1197,21 +1204,24 @@ class TestContournementsTailleEtCout(unittest.TestCase):
         self.assertEqual(out, "é" * 150)
 
 
-class TestContournementsInspection(unittest.TestCase):
-    """Chaîne réelle d'`inspect_candidate` : ce qui est lu est ce qui est scanné."""
+class TestInspectionCandidat(unittest.TestCase):
+    """Chaîne réelle d'`inspect_candidate` : ce qui est lu est ce qui est
+    scanné, et ce qui n'a pas pu être lu ne passe pas pour vérifié."""
     CAND = {"skill_id": "a", "name": "a", "source": "inconnu/repo", "installs": 3,
             "relevance_rank": 0}
     REPO = {"stars": 0, "pushed_at": iso_days_ago(10), "created_at": iso_days_ago(800),
             "owner_type": "User", "default_branch": "main",
             "full_name": "inconnu/repo", "owner_login": "inconnu"}
     USER = {"type": "User", "created_at": iso_days_ago(2000), "public_repos": 40}
+    ORG = {"type": "Organization", "created_at": iso_days_ago(2000),
+           "public_repos": 73, "source_repos": 10}
 
     def setUp(self):
         self.cache = skillscout.Cache(os.path.join(tempfile.mkdtemp(), "c.db"))
 
-    def _inspect(self, snap, **patches):
+    def _inspect(self, snap, owner=None, **patches):
         with patch("skillscout.fetch_repo", return_value=self.REPO), \
-             patch("skillscout.fetch_owner", return_value=self.USER), \
+             patch("skillscout.fetch_owner", return_value=owner or self.USER), \
              patch("skillscout.fetch_tree_snapshot", return_value=snap), \
              patch("skillscout.fetch_skill_md", side_effect=AssertionError("réseau")):
             with contextlib.ExitStack() as stack:
@@ -1266,6 +1276,113 @@ class TestContournementsInspection(unittest.TestCase):
         self.assertEqual(len(court), 10)
         self.assertEqual(len(long_), 40)
         self.assertEqual(g.call_count, 2)
+
+
+    def test_skill_md_illisible_ecarte_un_editeur_non_verifie(self):
+        snap = {"sha": "t" * 40, "paths": ["SKILL.md"], "blobs": {"SKILL.md": "6" * 40},
+                "truncated": False}
+        row = self._inspect(snap, fetch_blob={"side_effect": skillscout.GhError("403")})
+        self.assertTrue(row["excluded"], row.get("flags"))
+        self.assertIn("SKILL.md", row["reason"])
+
+    def test_skill_md_introuvable_ecarte_un_editeur_non_verifie(self):
+        # skills.sh référence « a » mais le seul SKILL.md vit dans `bar/` :
+        # aucun texte n'est attribuable au skill, donc rien n'a été vérifié.
+        snap = {"sha": "t" * 40, "paths": ["README.md", "bar/SKILL.md"],
+                "blobs": {"bar/SKILL.md": "7" * 40}, "truncated": False}
+        row = self._inspect(snap, fetch_blob={"side_effect": AssertionError("bar/ lu")})
+        self.assertTrue(row["excluded"], row.get("flags"))
+        self.assertIn("SKILL.md", row["reason"])
+
+    def test_skill_md_illisible_chez_un_editeur_de_confiance_est_signale(self):
+        # Garde-fou : la liste blanche et les organisations établies gardent
+        # leur tolérance, mais le drapeau dit que rien n'a été lu.
+        snap = {"sha": "t" * 40, "paths": ["SKILL.md"], "blobs": {"SKILL.md": "6" * 40},
+                "truncated": False}
+        row = self._inspect(snap, owner=self.ORG,
+                            fetch_blob={"side_effect": skillscout.GhError("403")})
+        self.assertFalse(row["excluded"])
+        self.assertIn("⚠ SKILL.md non lu", row["flags"])
+
+    def test_fichier_sans_extension_au_bit_executable_ecarte(self):
+        snap = {"sha": "t" * 40, "paths": ["SKILL.md", "install"],
+                "blobs": {"SKILL.md": "8" * 40}, "exec_bits": ["install"],
+                "truncated": False}
+        row = self._inspect(snap, fetch_blob={"return_value": "# a\nLis le code."})
+        self.assertTrue(row["excluded"], row.get("flags"))
+        self.assertIn("install", row["reason"])
+
+
+class TestDeclencheursManquants(unittest.TestCase):
+    """Fichiers qui déclenchent une exécution et passaient `find_executables`."""
+
+    def _vu(self, path):
+        self.assertEqual(skillscout.find_executables([path]), [path])
+
+    def test_typescript_jsx(self):
+        self._vu("a/run.tsx")
+
+    def test_javascript_jsx(self):
+        self._vu("a/app.jsx")
+
+    def test_pyproject_toml(self):
+        self._vu("a/pyproject.toml")
+
+    def test_cargo_toml(self):
+        self._vu("a/Cargo.toml")
+
+    def test_gemfile(self):
+        self._vu("a/Gemfile")
+
+    def test_hook_husky(self):
+        self._vu("a/.husky/pre-commit")
+
+    def test_reglages_claude_code(self):
+        # Les réglages Claude Code peuvent déclarer des hooks : des commandes
+        # lancées automatiquement à chaque action de l'agent.
+        self._vu("a/.claude/settings.json")
+
+    def test_reglages_claude_code_locaux(self):
+        self._vu(".claude/settings.local.json")
+
+    def test_serveurs_mcp(self):
+        # `.mcp.json` déclare des serveurs MCP, c'est-à-dire des commandes.
+        self._vu("a/.mcp.json")
+
+    def test_homonymes_inoffensifs_passent(self):
+        # Garde-fou : le nom seul ne suffit pas hors de son contexte.
+        self.assertEqual(skillscout.find_executables(
+            ["config/settings.json", "INSTALL", "notes/Gemfile.md",
+             "docs/husky.md", "mcp.json.example"]), [])
+
+
+class TestBitsExecution(unittest.TestCase):
+    """Un exécutable sans extension ne se reconnaît qu'au bit d'exécution
+    (mode 100755) que l'arbre Git fournit."""
+
+    def setUp(self):
+        self.cache = skillscout.Cache(os.path.join(tempfile.mkdtemp(), "c.db"))
+
+    RAW = {"sha": "t" * 40, "tree": [
+        {"path": "SKILL.md", "type": "blob", "mode": "100644", "sha": "1" * 40},
+        {"path": "install", "type": "blob", "mode": "100755", "sha": "2" * 40},
+        {"path": "docs", "type": "tree", "mode": "040000", "sha": "3" * 40}]}
+
+    def test_snapshot_expose_les_fichiers_au_bit_executable(self):
+        with patch("skillscout.gh_json", return_value=self.RAW):
+            snap = skillscout.fetch_tree_snapshot("a/b", self.cache, "2026-01-01T00:00:00Z")
+        self.assertEqual(snap.get("exec_bits"), ["install"])
+
+    def test_arbre_en_cache_sans_bits_d_execution_est_relu(self):
+        # Un arbre mis en cache avant l'enregistrement des bits d'exécution
+        # ne dit pas qu'il n'y en a pas : il ne sait pas. Il doit être relu.
+        self.cache.put("tree:v3", "a/b@2026-01-01T00:00:00Z",
+                       {"sha": "t" * 40, "paths": ["SKILL.md", "install"],
+                        "blobs": {}, "truncated": False})
+        with patch("skillscout.gh_json", return_value=self.RAW) as g:
+            snap = skillscout.fetch_tree_snapshot("a/b", self.cache, "2026-01-01T00:00:00Z")
+        g.assert_called_once()
+        self.assertEqual(snap.get("exec_bits"), ["install"])
 
 
 if __name__ == "__main__":

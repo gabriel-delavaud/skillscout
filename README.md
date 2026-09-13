@@ -41,10 +41,11 @@ Le problème : **un skill, ce sont des instructions que Claude va suivre avec vo
 
 ## La règle de sécurité
 
-Un skill est **écarté** si son éditeur n'est **pas de confiance** **et** que l'une de ces deux choses est vraie :
+Un skill est **écarté** si son éditeur n'est **pas de confiance** **et** que l'une de ces trois choses est vraie :
 
-- le **dossier du skill** contient du **code exécutable** : `.sh`, `.py`, `.js`, `.ts`, `.go`, `.rs`, `.php`, `Makefile`, `Dockerfile`, `package.json`… ou un dossier `scripts/`, `hooks/`, `bin/`, `.github/workflows/` (la casse ne compte pas : `install.SH` est vu) ;
-- le **texte du `SKILL.md`** demande d'**exécuter du code téléchargé ou dissimulé** : `curl … | sh` (ou `| python3`, `| sudo bash`, `| iex`…), `bash <(curl …)`, `bash -c`, `python -c`, `base64 -d`…
+- le **dossier du skill** contient du **code exécutable** : `.sh`, `.py`, `.js`, `.ts`, `.go`, `.rs`, `.php`, `Makefile`, `Dockerfile`, `package.json`, `pyproject.toml`, `.mcp.json`, `.claude/settings.json`… ou un dossier `scripts/`, `hooks/`, `bin/`, `.husky/`, `.github/workflows/`, ou tout fichier marqué exécutable dans Git, même sans extension (la casse ne compte pas : `install.SH` est vu) ;
+- le **texte du `SKILL.md`** demande d'**exécuter du code téléchargé ou dissimulé** : `curl … | sh` (ou `| python3`, `| sudo bash`, `| iex`…), `bash <(curl …)`, `bash -c`, `python -c`, `base64 -d`… ;
+- le **`SKILL.md`** est **introuvable ou illisible** : le texte que Claude suivrait n'a pas pu être vérifié.
 
 Un éditeur est de confiance s'il est :
 
@@ -65,6 +66,7 @@ skillscout **échoue en fermeture** dans les cas douteux — il écarte plutôt 
 | GitHub a tronqué la liste des fichiers | les fichiers manquants sont peut-être justement les scripts |
 | L'identité de l'éditeur est introuvable | impossible de vérifier à qui on fait confiance |
 | Le dossier du skill est introuvable | on inspecte alors **tout** le dépôt, pas moins |
+| Le `SKILL.md` est introuvable ou illisible | son texte n'a pas pu être vérifié ; un éditeur de confiance est gardé, avec `⚠ SKILL.md non lu` |
 | Le nombre de dépôts d'origine ne peut pas être compté | l'organisation est traitée comme si elle n'en avait aucun |
 | Le `SKILL.md` dépasse 500 000 caractères | la fin non analysée pourrait cacher une instruction |
 | Plusieurs dossiers portent le nom du skill | on ne sait pas lequel sera installé : ils sont tous inspectés |
@@ -199,7 +201,7 @@ Chaque ligne donne : le **nom du skill**, son **score de confiance**, le **dép�
 | `sans fichier exécutable` | aucun code exécutable dans le dossier du skill — un fait sur les fichiers, pas un brevet de sûreté |
 | `⚠ 3 fichiers exécutables` | contient du code, mais l'éditeur est de confiance |
 | `⚠ SKILL.md : …` | le texte du skill contient un motif sensible ; le skill est descendu dans le classement |
-| `⚠ SKILL.md non lu` | le texte n'a pas pu être récupéré : rien n'a été vérifié dessus |
+| `⚠ SKILL.md non lu` | le texte n'a pas pu être récupéré : rien n'a été vérifié dessus (n'apparaît que chez un éditeur de confiance ; un inconnu est écarté) |
 | `⚠ non maintenu depuis plus d'un an` | le dépôt semble abandonné |
 
 Pour installer le skill retenu, utilisez l'outil officiel :
@@ -219,7 +221,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 - **Le motif qu'on ne cherche pas n'est pas trouvé.** La liste des motifs est courte, lisible, et volontairement sans ambition sémantique.
 - **`npx skills add` installe la branche du moment**, pas l'empreinte inspectée. Si le dépôt a reçu un push entre les deux, ce que vous installez peut différer de ce qui a été évalué. Comparez le `@sha` affiché avec l'état du dépôt en cas de doute.
 - **La liste blanche est maintenue à la main.**
-- **L'index de skills.sh prend parfois du retard.** Un skill peut y figurer sous un ancien nom alors qu'il a été renommé ; son `SKILL.md` est alors introuvable et on inspecte tout le dépôt.
+- **L'index de skills.sh prend parfois du retard.** Un skill peut y figurer sous un ancien nom alors qu'il a été renommé ; son `SKILL.md` est alors introuvable, et le skill est écarté si son éditeur n'est pas de confiance, même s'il est inoffensif.
 - **Certaines sources de skills.sh ne sont pas des dépôts GitHub** (par exemple `smithery.ai`). skillscout ne peut pas les vérifier : il les ignore et l'indique.
 - **`qwen3:8b` est un petit modèle.** Il compare bien quelques documents courts, mais il se trompera parfois sur les nuances.
 - **Le classement favorise les skills populaires.** La pertinence de la recherche ne sert qu'à départager deux candidats à score égal. Un skill très pertinent mais peu installé peut ne pas apparaître.
@@ -229,7 +231,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **151 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13 : `python3 -m unittest discover -s tests`
+- **168 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13 : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
 - Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 
