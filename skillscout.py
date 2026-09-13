@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from urllib.error import HTTPError
 from urllib.parse import quote
@@ -79,34 +80,86 @@ CONTENT_PENALTY = 10.0     # par motif sensible relevé dans le SKILL.md
 #    l'éditeur n'est pas de confiance, pénalité sinon).
 #  - SENSITIVE_PATTERNS : secrets, destruction, exfiltration, ou tentative de
 #    manipuler le modèle qui relit le skill. Drapeau + pénalité.
+# Chaque détecteur reçoit le texte normalisé (`_normalize`) et renvoie une
+# valeur vraie s'il trouve son motif. Tous restent linéaires en la taille du
+# texte : un SKILL.md hostile ne doit pas pouvoir bloquer l'analyse.
+
+_FETCH = re.compile(
+    r"\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b", re.I)
+_CURL = re.compile(r"\bcurl\b", re.I)
+_WGET = re.compile(r"\bwget\b", re.I)
+# Interpréteur en tête d'un maillon de pipe : `| sh`, `| sudo -E bash`,
+# `| /bin/bash`, `| env python3`, `| iex`.
+_PIPE_TO_INTERPRETER = re.compile(
+    r"\|\s*(?:sudo(?:\s+-\S+)*\s+)?(?:env\s+)?(?:\S*/)?"
+    r"(?:(?:ba|z|da|k|fi)?sh|python[0-9.]*|perl|ruby|node|php|pwsh|powershell"
+    r"|iex|invoke-expression)\b", re.I)
+_CURL_UPLOAD = re.compile(
+    r"\s(?:-d|--data(?:-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file"
+    r"|--json|-X\s*POST|--request\s+POST)\b", re.I)
+_WGET_UPLOAD = re.compile(r"\s--(?:post|body)-(?:data|file)\b", re.I)
+
+
+def _then_on_same_line(first: re.Pattern, then: re.Pattern):
+    """Détecteur « `first`, puis `then` plus loin sur la même ligne ».
+    Chercher le premier `first` puis `then` dans la suite équivaut à tester
+    chaque occurrence de `first`, sans le coût quadratique d'une regex
+    `first[^\n]*then` sur une ligne truffée de `curl`."""
+    def found(text: str) -> bool:
+        for line in text.splitlines():
+            m = first.search(line)
+            if m and then.search(line, m.end()):
+                return True
+        return False
+    return found
+
+
+def _any_of(*detectors):
+    return lambda text: any(d(text) for d in detectors)
+
+
+SKILL_MD_TOO_LONG = "SKILL.md trop long pour être analysé en entier"
+
 EXEC_PATTERNS = {
     "téléchargement exécuté (curl/wget | sh)":
-        re.compile(r"\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b", re.I),
-    "shell inline (sh -c / eval)":
-        re.compile(r"\b(ba|z)?sh\s+-c\s|\beval\s+[\"'$`(]", re.I),
+        _then_on_same_line(_FETCH, _PIPE_TO_INTERPRETER),
+    "téléchargement exécuté (sh <(curl …))":
+        re.compile(r"<\(\s*(?:curl|wget|iwr|irm)\b", re.I).search,
+    "code inline (sh -c / python -c / eval)":
+        re.compile(r"\b(?:(?:ba|z)?sh|python[0-9.]*)\s+-c\s|\beval\s+[\"'$`(]",
+                   re.I).search,
     "décodage base64 exécuté":
-        re.compile(r"base64\s+(-d|--decode)\b|\batob\(", re.I),
+        re.compile(r"\bbase64\s+(?:-[a-z]*d[a-z]*|--decode)\b|\batob\(", re.I).search,
 }
 SENSITIVE_PATTERNS = {
     "accès aux secrets (~/.ssh, .env, credentials)":
-        re.compile(r"~/\.ssh|\.ssh/|\bid_(rsa|ed25519)\b|\.aws/credentials|"
-                   r"(^|[\s\"'`/])\.env(\b|$)|\.netrc", re.I | re.M),
+        re.compile(r"(?:^|[^\w.])\.ssh\b|\bid_(?:rsa|ed25519)\b|\.aws/credentials|"
+                   r"(?:^|[\s\"'`/])\.env(?:\b|$)|\.netrc", re.I | re.M).search,
     "suppression récursive (rm -rf)":
-        re.compile(r"\brm\s+-[a-z]*(rf|fr)\b", re.I),
+        re.compile(r"\brm\s+(?:-{1,2}[\w-]+\s+)*?(?:-[a-z]*r[a-z]*|--recursive)\b",
+                   re.I).search,
     "envoi de données vers l'extérieur (curl -d / POST)":
-        re.compile(r"\bcurl\b[^\n]*\s(-d|--data(-binary|-raw)?|-F|-T|-X\s*POST)\b",
-                   re.I),
+        _any_of(_then_on_same_line(_CURL, _CURL_UPLOAD),
+                _then_on_same_line(_WGET, _WGET_UPLOAD)),
     "injection de prompt (« ignore les instructions… »)":
-        re.compile(r"ignore\s+(all\s+)?(previous|prior|above|the)\s+instructions|"
-                   r"disregard\s+(all\s+)?(previous|prior|above)|"
-                   r"ignore[sz]?\s+(toutes\s+)?les\s+(instructions|consignes)|"
-                   r"do\s+not\s+(tell|inform|mention)\s+((this|it)\s+to\s+)?the\s+user|"
-                   r"ne\s+(le\s+)?(dis|mentionne|signale)\s+pas\s+à\s+l.utilisateur",
-                   re.I),
+        re.compile(
+            r"ignore\s+(?:all\s+|any\s+)?(?:(?:your|the|my)\s+)?"
+            r"(?:(?:previous|prior|above|earlier)\s+)?instructions"
+            r"|disregard\s+(?:all\s+)?(?:previous|prior|above)"
+            r"|ignore[sz]?\s+(?:toutes\s+)?les\s+(?:instructions|consignes)"
+            r"|(?:do\s+not|don.t|never)\s+(?:tell|inform|mention)\s+"
+            r"(?:(?:this|it)\s+to\s+)?the\s+user"
+            r"|\bne\s+(?:(?:le|la|les|lui|rien)\s+)?"
+            r"(?:dis|dites|mentionne[sz]?|signale[sz]?)\s+"
+            r"(?:(?:pas|jamais|rien)\s+)?(?:à|a)\s+l.utilisateur",
+            re.I).search,
 }
 
+_INVISIBLES = dict.fromkeys(map(ord, "​‌‍⁠﻿­"))
+
 RAW_URL = "https://raw.githubusercontent.com/{source}/{branch}/{path}"
-SKILL_MD_LIMIT = 3000
+SKILL_MD_LIMIT = 3000            # caractères du SKILL.md transmis au LLM
+SKILL_MD_SCAN_LIMIT = 500_000   # caractères analysés ; au-delà, non vérifiable
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 # `SKILLSCOUT_MODEL` évite de répéter --model sur une machine qui héberge un
@@ -340,28 +393,32 @@ def fetch_tree_truncated(source: str, cache: Cache, pushed_at: str = "") -> bool
 
 
 def fetch_blob(source: str, sha: str, cache: Cache,
-               limit: int = SKILL_MD_LIMIT) -> str:
+               limit: int = SKILL_MD_SCAN_LIMIT + 1) -> str:
     """Contenu d'un blob épinglé par son SHA — exactement la version listée
-    dans l'arbre évalué, quoi qu'il arrive à la branche entre-temps."""
+    dans l'arbre évalué, quoi qu'il arrive à la branche entre-temps. Le
+    plafond fait partie de la clé de cache : un texte coupé court n'est
+    jamais resservi à une lecture qui en demande davantage."""
     def build():
         raw = gh_json(f"repos/{source}/git/blobs/{sha}")
         content = raw.get("content") or ""
         if raw.get("encoding") == "base64":
             content = base64.b64decode(content).decode("utf-8", "replace")
         return {"text": content[:limit]}
-    return _cached(cache, "blob", sha, build, ttl=CACHE_TTL_BLOB)["text"]
+    return _cached(cache, "blob", f"{sha}:{limit}", build,
+                   ttl=CACHE_TTL_BLOB)["text"]
 
 
 def fetch_skill_md(source: str, branch: str, path: str,
-                   limit: int = SKILL_MD_LIMIT) -> str:
-    """Repli non épinglé (branche mobile) quand l'arbre n'a pas donné de SHA."""
+                   limit: int = SKILL_MD_SCAN_LIMIT + 1) -> str:
+    """Repli non épinglé (branche mobile) quand l'arbre n'a pas donné de SHA.
+    Renvoie au plus `limit` caractères."""
     url = RAW_URL.format(source=source, branch=branch, path=quote(path))
     req = Request(url, headers={"User-Agent": "skillscout"})
     with urlopen(req, timeout=HTTP_TIMEOUT) as r:
-        # On ne lit que `limit` octets : un fichier énorme ne traverse pas
-        # le réseau pour finir tronqué en mémoire.
-        return r.read(limit).decode("utf-8", "replace")[:limit]
-
+        # UTF-8 code un caractère sur 4 octets au plus : lire 4 × limit octets
+        # donne `limit` caractères dès que le fichier les contient, sans
+        # télécharger un fichier énorme en entier.
+        return r.read(4 * limit).decode("utf-8", "replace")[:limit]
 
 # ---------------------------------------------------------------------------
 # Étape 3 — modèle de confiance
@@ -383,40 +440,62 @@ def find_executables(paths: list[str]) -> list[str]:
     return hits
 
 
+def _normalize(body: str) -> str:
+    """Forme sous laquelle le texte est analysé : compatibilité Unicode
+    (lettres pleine chasse → ASCII), caractères invisibles retirés (`cu\u200brl`),
+    continuations de ligne shell recollées (`curl … \\⏎ | sh`)."""
+    text = unicodedata.normalize("NFKC", body).translate(_INVISIBLES)
+    return re.sub(r"\\\r?\n", " ", text)
+
+
 def scan_skill_md(body: str) -> tuple[list[str], list[str]]:
     """Motifs relevés dans le texte d'un SKILL.md : (instructions d'exécution,
     motifs sensibles). Déterministe, sans LLM. Ne prétend pas juger l'intention
-    du texte : il nomme ce qu'il y trouve."""
-    execs = [label for label, rx in EXEC_PATTERNS.items() if rx.search(body)]
-    sens = [label for label, rx in SENSITIVE_PATTERNS.items() if rx.search(body)]
+    du texte : il nomme ce qu'il y trouve. Au-delà de SKILL_MD_SCAN_LIMIT
+    caractères, le texte n'est pas vu en entier : c'est rapporté comme une
+    instruction d'exécution, pour que la fin non lue ne serve pas de cachette."""
+    execs = []
+    if len(body) > SKILL_MD_SCAN_LIMIT:
+        execs.append(SKILL_MD_TOO_LONG)
+        body = body[:SKILL_MD_SCAN_LIMIT]
+    text = _normalize(body)
+    execs += [label for label, found in EXEC_PATTERNS.items() if found(text)]
+    sens = [label for label, found in SENSITIVE_PATTERNS.items() if found(text)]
     return execs, sens
 
 
-def locate_skill_md(paths: list[str], skill_id: str) -> str | None:
-    """Retrouve le SKILL.md d'un skill donné dans l'arborescence du dépôt.
-    Préfère le répertoire portant le nom du skill ; se replie sur la racine
-    quand le dépôt n'expose qu'un seul skill."""
+def locate_skill_mds(paths: list[str], skill_id: str) -> list[str]:
+    """Tous les SKILL.md du skill : ceux d'un répertoire portant son nom, où
+    qu'il soit dans le dépôt. Plusieurs peuvent coexister (un leurre
+    `examples/a/` à côté du vrai `skills/a/`) et rien ne dit lequel sera
+    installé : ils sont donc tous inspectés. Repli sur la racine quand le
+    dépôt n'expose qu'un seul skill."""
     candidates = [p for p in paths if p.endswith("SKILL.md")]
-    for p in candidates:
-        parts = p.split("/")
-        if len(parts) >= 2 and parts[-2] == skill_id:
-            return p
-    if candidates == ["SKILL.md"]:
-        return "SKILL.md"
-    return None
+    named = [p for p in candidates
+             if len(p.split("/")) >= 2 and p.split("/")[-2] == skill_id]
+    if named:
+        return named
+    return ["SKILL.md"] if candidates == ["SKILL.md"] else []
+
+
+def locate_skill_md(paths: list[str], skill_id: str) -> str | None:
+    """Premier SKILL.md du skill, pour l'affichage et la sortie JSON."""
+    found = locate_skill_mds(paths, skill_id)
+    return found[0] if found else None
 
 
 def skill_paths(paths: list[str], skill_id: str) -> list[str]:
-    """Restreint l'arborescence au répertoire du skill : un `.py` ailleurs
+    """Restreint l'arborescence aux répertoires du skill : un `.py` ailleurs
     dans un monorepo ne concerne pas ce skill, et inversement un skill tiers
-    dans le monorepo d'une organisation n'hérite pas de sa propreté. Sans
-    SKILL.md localisé, ou pour un SKILL.md à la racine, renvoie tout le dépôt
-    (échec en fermeture)."""
-    md = locate_skill_md(paths, skill_id)
-    if not md or "/" not in md:
+    dans le monorepo d'une organisation n'hérite pas de sa propreté. Si
+    plusieurs répertoires portent son nom, tous comptent. Sans SKILL.md
+    localisé, ou avec un SKILL.md à la racine, renvoie tout le dépôt (échec
+    en fermeture)."""
+    mds = locate_skill_mds(paths, skill_id)
+    if not mds or any("/" not in md for md in mds):
         return paths
-    prefix = md.rsplit("/", 1)[0] + "/"
-    return [p for p in paths if p.startswith(prefix)]
+    prefixes = tuple(md.rsplit("/", 1)[0] + "/" for md in mds)
+    return [p for p in paths if p.startswith(prefixes)]
 
 
 def _age_days(iso: str, now: float) -> float:
@@ -652,9 +731,25 @@ def format_excluded(rows: list[dict]) -> str:
                      for r in rows)
 
 
+def _read_skill_mds(source: str, md_paths: list[str], blobs: dict,
+                    branch: str, cache: Cache) -> str | None:
+    """Texte de tous les SKILL.md du skill, bout à bout, pour l'analyse. None
+    si aucun n'est localisé ou si l'un d'eux est illisible : un texte partiel
+    laisserait croire que tout a été vu."""
+    texts = []
+    for path in md_paths:
+        sha = blobs.get(path)
+        try:
+            texts.append(fetch_blob(source, sha, cache) if sha
+                         else fetch_skill_md(source, branch, path))
+        except (GhError, OSError):
+            return None
+    return "\n\n".join(texts) if texts else None
+
+
 def inspect_candidate(cand: dict, cache: Cache, now: float) -> dict:
     """Toute l'inspection GitHub d'un candidat : métadonnées, arbre restreint
-    au skill, SKILL.md épinglé, évaluation. Lève GhError si `gh` échoue."""
+    au skill, SKILL.md épinglés, évaluation. Lève GhError si `gh` échoue."""
     source = cand["source"]
     repo_meta = fetch_repo(source, cache)
     # L'éditeur s'identifie depuis la réponse de l'API (`owner_login`), jamais
@@ -670,17 +765,15 @@ def inspect_candidate(cand: dict, cache: Cache, now: float) -> dict:
     row = evaluate(cand, repo_meta, owner_meta, scoped, now, truncated)
     body, md_path, md_sha = None, None, None
     if not row["excluded"]:
-        md_path = locate_skill_md(paths, cand["skill_id"])
-        if md_path:
-            md_sha = snap.get("blobs", {}).get(md_path)
-            try:
-                if md_sha:
-                    body = fetch_blob(source, md_sha, cache)
-                else:
-                    body = fetch_skill_md(source, repo_meta["default_branch"], md_path)
-            except (GhError, OSError):
-                body = None
-        row = evaluate(cand, repo_meta, owner_meta, scoped, now, truncated, body)
+        blobs = snap.get("blobs", {})
+        md_paths = locate_skill_mds(paths, cand["skill_id"])
+        if md_paths:
+            md_path, md_sha = md_paths[0], blobs.get(md_paths[0])
+        full = _read_skill_mds(source, md_paths, blobs,
+                               repo_meta.get("default_branch", "main"), cache)
+        row = evaluate(cand, repo_meta, owner_meta, scoped, now, truncated, full)
+        # Tout le texte est analysé ; seul un extrait part vers le LLM.
+        body = full[:SKILL_MD_LIMIT] if full is not None else None
 
     row["body"] = body
     row["skill_md_path"] = md_path

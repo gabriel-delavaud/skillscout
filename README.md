@@ -44,7 +44,7 @@ Le problème : **un skill, ce sont des instructions que Claude va suivre avec vo
 Un skill est **écarté** si son éditeur n'est **pas de confiance** **et** que l'une de ces deux choses est vraie :
 
 - le **dossier du skill** contient du **code exécutable** : `.sh`, `.py`, `.js`, `.ts`, `.go`, `.rs`, `.php`, `Makefile`, `Dockerfile`, `package.json`… ou un dossier `scripts/`, `hooks/`, `bin/`, `.github/workflows/` (la casse ne compte pas : `install.SH` est vu) ;
-- le **texte du `SKILL.md`** demande d'**exécuter du code téléchargé ou dissimulé** : `curl … | sh`, `bash -c`, `base64 -d`…
+- le **texte du `SKILL.md`** demande d'**exécuter du code téléchargé ou dissimulé** : `curl … | sh` (ou `| python3`, `| sudo bash`, `| iex`…), `bash <(curl …)`, `bash -c`, `python -c`, `base64 -d`…
 
 Un éditeur est de confiance s'il est :
 
@@ -52,6 +52,8 @@ Un éditeur est de confiance s'il est :
 - **ou** une organisation GitHub qui remplit quatre conditions : compte de plus d'un an, au moins 10 dépôts **d'origine** (les forks ne comptent pas), dépôt mis à jour dans l'année, dépôt créé depuis plus de 90 jours.
 
 Un skill **sans fichier exécutable** publié par un inconnu est **gardé**, mais son texte est lu quand même. Un skill est aussi du texte que Claude exécutera : ce texte peut demander tout ce qu'un script ferait. C'est pour ça que skillscout le lit.
+
+Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier ; seul un extrait de 3 000 caractères est transmis à l'IA locale.
 
 Le texte du `SKILL.md` est aussi fouillé pour des **motifs sensibles** qui, sans écarter le skill, le font descendre dans le classement et sont affichés : accès aux secrets (`~/.ssh`, `.env`, `credentials`), suppression récursive (`rm -rf`), envoi de données vers l'extérieur (`curl -d`, `POST`), et tentatives de manipuler l'IA (« ignore les instructions précédentes », « ne le dis pas à l'utilisateur »).
 
@@ -64,6 +66,8 @@ skillscout **échoue en fermeture** dans les cas douteux — il écarte plutôt 
 | L'identité de l'éditeur est introuvable | impossible de vérifier à qui on fait confiance |
 | Le dossier du skill est introuvable | on inspecte alors **tout** le dépôt, pas moins |
 | Le nombre de dépôts d'origine ne peut pas être compté | l'organisation est traitée comme si elle n'en avait aucun |
+| Le `SKILL.md` dépasse 500 000 caractères | la fin non analysée pourrait cacher une instruction |
+| Plusieurs dossiers portent le nom du skill | on ne sait pas lequel sera installé : ils sont tous inspectés |
 
 ### Ce que vous voyez est ce qui a été inspecté
 
@@ -225,7 +229,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **121 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13 : `python3 -m unittest discover -s tests`
+- **151 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13 : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
 - Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 
