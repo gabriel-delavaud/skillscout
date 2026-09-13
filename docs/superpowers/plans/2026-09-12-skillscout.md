@@ -349,7 +349,7 @@ def fetch_tree(source: str, cache: Cache) -> list[str]:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd ~/Developer/skillscout && python3 -m unittest discover -s tests -v`
-Expected: PASS — 12 tests au total
+Expected: PASS — 14 tests au total
 
 - [ ] **Step 5: Commit**
 
@@ -509,7 +509,7 @@ def is_trusted_publisher(owner: str, owner_meta: dict, repo_meta: dict,
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd ~/Developer/skillscout && python3 -m unittest discover -s tests -v`
-Expected: PASS — 23 tests au total
+Expected: PASS — 25 tests au total
 
 - [ ] **Step 5: Commit**
 
@@ -668,7 +668,7 @@ def rank(evaluated: list[dict], top: int = 10) -> list[dict]:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd ~/Developer/skillscout && python3 -m unittest discover -s tests -v`
-Expected: PASS — 30 tests au total
+Expected: PASS — 32 tests au total
 
 - [ ] **Step 5: Commit**
 
@@ -764,7 +764,7 @@ def fetch_skill_md(source: str, branch: str, path: str,
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd ~/Developer/skillscout && python3 -m unittest discover -s tests -v`
-Expected: PASS — 34 tests au total
+Expected: PASS — 36 tests au total
 
 - [ ] **Step 5: Commit**
 
@@ -1010,7 +1010,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd ~/Developer/skillscout && python3 -m unittest discover -s tests -v`
-Expected: PASS — 39 tests au total
+Expected: PASS — 41 tests au total
 
 - [ ] **Step 5: Create the launcher and verify end to end**
 

@@ -54,11 +54,18 @@ Les étapes 1 à 4 sont gratuites et déterministes. L'étape 5 tourne sur la ma
 Un candidat est **écarté** si son dépôt contient du code exécutable **et** que son
 éditeur n'est pas de confiance.
 
-- *Code exécutable* : tout chemin se terminant par `.sh .py .js .mjs .cjs .ts .rb
-  .pl .ps1 .bat .command`, ou tout fichier situé sous un répertoire `scripts/`
-  ou `hooks/`.
+- *Code exécutable* : tout chemin se terminant par `.sh .bash .zsh .py .js .mjs
+  .cjs .ts .rb .pl .ps1 .bat .command .ipynb .go .rs .php`, ou tout fichier
+  situé sous un répertoire `scripts/`, `hooks/` ou `bin/`.
 - *Éditeur de confiance* : présent dans la liste blanche, **ou** organisation
   GitHub passant les trois seuils.
+- *Arborescence tronquée* : un candidat dont `gh api …/git/trees/HEAD?recursive=1`
+  renvoie `truncated: true` est traité comme **non vérifiable** : GitHub omet
+  silencieusement des entrées au-delà d'environ 100 000 fichiers ou 7 Mo, et ce
+  sont justement celles où un script aurait pu se cacher. Un éditeur de
+  confiance tolère la troncature (son code a déjà passé le filtre de
+  provenance) ; un éditeur non vérifié avec une arborescence tronquée est
+  écarté, comme s'il contenait du code exécutable détecté.
 
 ### Liste blanche d'éditeurs
 
@@ -100,6 +107,21 @@ Les échelles logarithmiques évitent qu'un dépôt à 100 000 étoiles écrase 
 reste : la différence entre 10 et 100 étoiles compte plus que celle entre 10 000
 et 100 000.
 
+### Égalité de score : la pertinence comme simple départage
+
+`search_skills` reçoit les candidats de skills.sh déjà triés par pertinence,
+puis les retrie par installations avant de tronquer à 25 — le signal de
+pertinence de l'API n'atteint donc jamais `evaluate` tel quel. Pour ne pas
+réimporter le biais de popularité que ce tri existe justement pour corriger,
+**la pertinence n'est pas un terme du score** : elle sert uniquement à
+départager deux candidats dont le score est strictement égal. `search_skills`
+capture la position de chaque candidat dans l'ordre de réponse de l'API sous
+la clé `relevance_rank` (0 = premier résultat), avant le tri par installations
+et sans modifier ce tri ni la troncature. `rank()` trie par score décroissant
+puis, à égalité, par `relevance_rank` croissant. Un score supérieur l'emporte
+toujours, quel que soit le `relevance_rank` : ce n'est qu'un départage, pas un
+correctif complet à la perte du signal de pertinence.
+
 ## Sources de données
 
 | Source | Accès | Limite |
@@ -121,10 +143,11 @@ skillscout --json "…"                        # sortie machine
 ```
 
 Sortie par défaut : le top 10 en liste compacte d'abord — score, source et
-drapeaux (`⚠ 3 fichiers exécutables`, `org vérifiée`, `markdown pur`) — puis le
-top 3 expliqué par Qwen. Cet ordre est délibéré : le tri est instantané, la
-synthèse locale prend une trentaine de secondes. L'utilisateur a donc quelque
-chose à lire immédiatement plutôt qu'un écran vide.
+drapeaux (`⚠ 3 fichiers exécutables`, `organisation : ≥365 j, ≥10 dépôts
+publics, dépôt actif`, `markdown pur`) — puis le top 3 expliqué par Qwen. Cet
+ordre est délibéré : le tri est instantané, la synthèse locale prend une
+trentaine de secondes. L'utilisateur a donc quelque chose à lire immédiatement
+plutôt qu'un écran vide.
 
 ## Contraintes globales
 
