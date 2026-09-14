@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillscout"
+version = "0.2.0"
+description = "Trie les skills de skills.sh par confiance sans LLM, puis fait expliquer un top 5 par un modèle local — zéro token facturé"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = []
+keywords = ["claude-code", "agent-skills", "security", "skills.sh"]
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Natural Language :: French",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Security",
+]
+
+[project.urls]
+Homepage = "https://github.com/gabriel-delavaud/skillscout"
+
+[project.scripts]
+skillscout = "skillscout:cli"
+
+[tool.setuptools]
+py-modules = ["skillscout"]
