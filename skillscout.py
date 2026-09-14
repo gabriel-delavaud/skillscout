@@ -94,12 +94,18 @@ _FETCH = re.compile(
     r"\b(?:curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod)\b", re.I)
 _CURL = re.compile(r"\bcurl\b", re.I)
 _WGET = re.compile(r"\bwget\b", re.I)
-# Interpréteur en tête d'un maillon de pipe : `| sh`, `| sudo -E bash`,
-# `| /bin/bash`, `| env python3`, `| iex`.
+# Interpréteur en tête d'un maillon de pipe : `| sh`, `| /bin/bash`, `| iex`,
+# éventuellement derrière un lanceur qui exécute la commande suivante avec
+# ses options et arguments : `| exec sh`, `| xargs sh`, `| sudo -u root bash`,
+# `| env VAR=1 python3`. Un seul lanceur, dont les arguments ne franchissent
+# jamais le maillon (`|`, `;`, `&`) : aucun quantificateur imbriqué, donc pas
+# de retour arrière exponentiel sur une chaîne de lanceurs hostile.
+_LAUNCHER = r"(?:sudo|doas|exec|xargs|env|nohup|command|time|timeout|nice|stdbuf)"
+_INTERPRETER = (r"(?:(?:ba|z|da|k|fi)?sh|python[0-9.]*|perl|ruby|node|php|pwsh"
+                r"|powershell|iex|invoke-expression)")
 _PIPE_TO_INTERPRETER = re.compile(
-    r"\|\s*(?:sudo(?:\s+-\S+)*\s+)?(?:env\s+)?(?:\S*/)?"
-    r"(?:(?:ba|z|da|k|fi)?sh|python[0-9.]*|perl|ruby|node|php|pwsh|powershell"
-    r"|iex|invoke-expression)\b", re.I)
+    r"\|\s*(?:" + _LAUNCHER + r"\b(?:\s+[^\s|;&]+)*?\s+)?(?:\S*/)?"
+    + _INTERPRETER + r"\b", re.I)
 _CURL_UPLOAD = re.compile(
     r"\s(?:-d|--data(?:-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file"
     r"|--json|-X\s*POST|--request\s+POST)\b", re.I)
@@ -134,6 +140,10 @@ EXEC_PATTERNS = {
         _then_on_same_line(_FETCH, _PIPE_TO_INTERPRETER),
     "téléchargement exécuté (sh <(curl …))":
         re.compile(r"<\(\s*(?:curl|wget|iwr|irm)\b", re.I).search,
+    "téléchargement exécuté (PowerShell iex (iwr …))":
+        re.compile(r"\b(?:iex|invoke-expression)\b[\s(]*(?:iwr|irm|invoke-webrequest"
+                   r"|invoke-restmethod|new-object\s+(?:system\.)?net\.webclient)\b",
+                   re.I).search,
     "code inline (sh -c / python -c / eval)":
         re.compile(r"\b(?:(?:ba|z)?sh|python[0-9.]*)\s+-c\s|\beval\s+[\"'$`(]",
                    re.I).search,
