@@ -312,8 +312,11 @@ class Cache:
 def gh_json(api_path: str):
     """Lance `gh api <api_path>` et renvoie le JSON. 5000 req/h, contre 60 en anonyme."""
     try:
+        # `gh` écrit en UTF-8 : sans encodage explicite, Windows décode en cp1252
+        # et plante sur le premier caractère non latin.
         p = subprocess.run(["gh", "api", api_path], capture_output=True,
-                           text=True, timeout=GH_TIMEOUT)
+                           text=True, encoding="utf-8", errors="replace",
+                           timeout=GH_TIMEOUT)
     except FileNotFoundError as e:
         raise GhError("`gh` introuvable. Installez GitHub CLI et lancez `gh auth login`.") from e
     except subprocess.TimeoutExpired as e:
