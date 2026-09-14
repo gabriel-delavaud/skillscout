@@ -48,7 +48,8 @@ CACHE_TTL_BLOB = 30 * 86400  # un blob est adressé par son SHA : immuable
 #   v2 : owner_login/full_name sur "repo", truncated sur "tree"
 #   v3 : created_at sur "repo", source_repos sur "owner", sha/blobs sur "tree"
 #   v4 : exec_bits sur "tree" (un arbre sans ce champ ne sait pas, il ne dit pas « aucun »)
-CACHE_SCHEMA = 4
+#   v5 : opaque_entries sur "tree" (liens symboliques et sous-modules)
+CACHE_SCHEMA = 5
 
 EXEC_SUFFIXES = (".sh", ".bash", ".zsh", ".fish", ".nu", ".py", ".js", ".mjs",
                  ".cjs", ".ts", ".tsx", ".jsx", ".rb", ".pl", ".ps1", ".bat", ".cmd", ".command",
@@ -111,7 +112,10 @@ def _then_on_same_line(first: re.Pattern, then: re.Pattern):
     chaque occurrence de `first`, sans le coût quadratique d'une regex
     `first[^\n]*then` sur une ligne truffée de `curl`."""
     def found(text: str) -> bool:
-        for line in text.splitlines():
+        # Seul `\n` termine une commande shell. `str.splitlines` couperait
+        # aussi sur `\r`, `\x85`, U+2028…, que bash lit comme des caractères
+        # ordinaires : ils cacheraient le pipe.
+        for line in text.split("\n"):
             m = first.search(line)
             if m and then.search(line, m.end()):
                 return True
@@ -381,6 +385,11 @@ def fetch_tree_snapshot(source: str, cache: Cache, pushed_at: str = "") -> dict:
                       if t.get("type") == "blob" and t.get("sha")},
             # Mode 100755 : le seul signal fiable d'un script sans extension.
             "exec_bits": [t["path"] for t in entries if t.get("mode") == "100755"],
+            # Contenu absent de l'arbre : un lien symbolique (120000) ne stocke
+            # que le chemin de sa cible, un sous-module (160000) pointe vers un
+            # autre dépôt. Comme un arbre tronqué, ils ne se vérifient pas.
+            "opaque_entries": [t["path"] for t in entries
+                               if t.get("mode") in ("120000", "160000")],
             # GitHub tronque silencieusement au-delà d'environ 100 000 entrées
             # ou 7 Mo : les entrées omises sont justement celles où un script
             # aurait pu se cacher.
@@ -409,7 +418,11 @@ def fetch_blob(source: str, sha: str, cache: Cache,
         raw = gh_json(f"repos/{source}/git/blobs/{sha}")
         content = raw.get("content") or ""
         if raw.get("encoding") == "base64":
-            content = base64.b64decode(content).decode("utf-8", "replace")
+            try:
+                content = base64.b64decode(content).decode("utf-8", "replace")
+            except ValueError as e:  # binascii.Error hérite de ValueError
+                # Un seul blob illisible ne doit pas faire tomber tout le lot.
+                raise GhError(f"blob {sha} de {source} illisible : base64 invalide") from e
         return {"text": content[:limit]}
     return _cached(cache, "blob", f"{sha}:{limit}", build,
                    ttl=CACHE_TTL_BLOB)["text"]
@@ -553,14 +566,24 @@ def _plural(n: int, one: str, many: str) -> str:
     return one if n == 1 else many
 
 
+def _shown(paths: list[str], n: int = 3) -> str:
+    """Les premiers chemins en cause, pour une raison d'exclusion lisible."""
+    return ", ".join(paths[:n]) + (", …" if len(paths) > n else "")
+
+
 def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
              paths: list[str], now: float, truncated: bool,
-             body: str | None = None, exec_bits=()) -> dict:
+             body: str | None = None, exec_bits=(), opaque=(),
+             check_text: bool = True) -> dict:
     """Applique l'exclusion stricte puis calcule le score de classement.
     `paths` est l'arborescence déjà restreinte au skill (voir `skill_paths`) ;
     `body` le texte du SKILL.md, ou None s'il n'a pas pu être lu ni même
     attribué au skill : chez un éditeur non vérifié, c'est une exclusion.
-    `exec_bits` liste les chemins marqués exécutables dans l'arbre Git."""
+    `exec_bits` liste les chemins marqués exécutables dans l'arbre Git,
+    `opaque` les liens symboliques et sous-modules, dont l'arbre ne donne pas
+    le contenu. `check_text=False` limite l'évaluation à la structure
+    (identité, troncature, fichiers, entrées opaques) : le texte n'est alors
+    ni analysé ni exigé."""
     # L'identité vient de l'API (`repo_meta`), jamais de la chaîne `source`
     # fournie par skills.sh : `gh api repos/{source}` suit silencieusement un
     # renommage/transfert, donc `source` peut pointer vers un autre dépôt que
@@ -598,16 +621,27 @@ def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
         )
         return out
 
+    opaque_set = set(opaque)
+    hidden = [p for p in paths if p in opaque_set]
+    if hidden and not trusted:
+        out["excluded"] = True
+        out["reason"] = (
+            f"{len(hidden)} " + _plural(len(hidden), "lien symbolique ou sous-module",
+                                        "liens symboliques ou sous-modules")
+            + f" ({_shown(hidden)}) : leur contenu n'apparaît pas dans l'arbre et "
+            f"ne peut pas être vérifié — éditeur non vérifié ({owner})"
+        )
+        return out
+
     execs = find_executables(paths, exec_bits)
-    exec_instr, sensitive = scan_skill_md(body) if body else ([], [])
+    exec_instr, sensitive = scan_skill_md(body) if check_text and body else ([], [])
     out["executables"] = execs
     out["content_hits"] = exec_instr + sensitive
 
     if (execs or exec_instr) and not trusted:
         motifs = []
         if execs:
-            shown = ", ".join(execs[:3]) + (", …" if len(execs) > 3 else "")
-            motifs.append(f"{len(execs)} fichier(s) exécutable(s) ({shown})")
+            motifs.append(f"{len(execs)} fichier(s) exécutable(s) ({_shown(execs)})")
         if exec_instr:
             motifs.append("SKILL.md demandant d'exécuter du code : "
                           + ", ".join(exec_instr))
@@ -615,13 +649,13 @@ def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
         out["reason"] = " ; ".join(motifs) + f" — éditeur non vérifié ({owner})"
         return out
 
-    if body is None and not trusted:
-        # Le texte est ce que l'agent suivra. Ne pas l'avoir lu, ou ne pas
-        # savoir lequel lire, n'est pas l'avoir trouvé propre.
+    if check_text and not (body or "").strip() and not trusted:
+        # Le texte est ce que l'agent suivra. Ne pas l'avoir lu, ne pas savoir
+        # lequel lire, ou n'y trouver que du vide, n'est pas l'avoir trouvé propre.
         out["excluded"] = True
-        out["reason"] = ("SKILL.md introuvable ou illisible : le texte que "
-                         "l'agent suivrait n'a pas pu être vérifié — éditeur "
-                         f"non vérifié ({owner})")
+        out["reason"] = ("SKILL.md introuvable, illisible ou vide : le texte "
+                         "que l'agent suivrait n'a pas pu être vérifié — "
+                         f"éditeur non vérifié ({owner})")
         return out
 
     score = 0.0
@@ -665,7 +699,11 @@ def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
         # pas un brevet de sûreté : le texte du SKILL.md est analysé à part.
         flags.append("sans fichier exécutable")
 
-    if body is None:
+    if hidden:
+        flags.append(f"⚠ {len(hidden)} " + _plural(
+            len(hidden), "lien symbolique ou sous-module",
+            "liens symboliques ou sous-modules"))
+    if check_text and body is None:
         flags.append("⚠ SKILL.md non lu")
     if exec_instr:
         score -= EXEC_PENALTY
@@ -787,21 +825,26 @@ def inspect_candidate(cand: dict, cache: Cache, now: float) -> dict:
     scoped = skill_paths(paths, cand["skill_id"])
 
     exec_bits = snap.get("exec_bits", [])
-    # Premier passage avec un texte vide : il ne peut écarter que pour des
-    # raisons de structure (identité, troncature, fichiers exécutables).
-    # Inutile de lire le SKILL.md d'un candidat déjà écarté.
-    row = evaluate(cand, repo_meta, owner_meta, scoped, now, truncated, "",
-                   exec_bits)
+    opaque = snap.get("opaque_entries", [])
+    # Premier passage sur la seule structure (identité, troncature, fichiers,
+    # entrées opaques) : inutile de lire le SKILL.md d'un candidat déjà écarté.
+    row = evaluate(cand, repo_meta, owner_meta, scoped, now, truncated,
+                   exec_bits=exec_bits, opaque=opaque, check_text=False)
     body, md_path, md_sha = None, None, None
     if not row["excluded"]:
         blobs = snap.get("blobs", {})
         md_paths = locate_skill_mds(paths, cand["skill_id"])
         if md_paths:
             md_path, md_sha = md_paths[0], blobs.get(md_paths[0])
-        full = _read_skill_mds(source, md_paths, blobs,
-                               repo_meta.get("default_branch", "main"), cache)
+        if set(md_paths) & set(opaque):
+            # Le blob d'un SKILL.md en lien symbolique ne contient que le
+            # chemin de sa cible : ce n'est pas le texte que l'agent suivra.
+            full = None
+        else:
+            full = _read_skill_mds(source, md_paths, blobs,
+                                   repo_meta.get("default_branch", "main"), cache)
         row = evaluate(cand, repo_meta, owner_meta, scoped, now, truncated, full,
-                       exec_bits)
+                       exec_bits=exec_bits, opaque=opaque)
         # Tout le texte est analysé ; seul un extrait part vers le LLM.
         body = full[:SKILL_MD_LIMIT] if full is not None else None
 
