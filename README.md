@@ -44,7 +44,7 @@ Le problème : **un skill, ce sont des instructions que Claude va suivre avec vo
 Un skill est **écarté** si son éditeur n'est **pas de confiance** **et** que l'une de ces quatre choses est vraie :
 
 - le **dossier du skill** contient du **code exécutable** : `.sh`, `.py`, `.js`, `.ts`, `.go`, `.rs`, `.php`, `Makefile`, `Dockerfile`, `package.json`, `pyproject.toml`, `.mcp.json`, `.claude/settings.json`… ou un dossier `scripts/`, `hooks/`, `bin/`, `.husky/`, `.github/workflows/`, ou tout fichier marqué exécutable dans Git, même sans extension (la casse ne compte pas : `install.SH` est vu) ;
-- le **texte du `SKILL.md`** demande d'**exécuter du code téléchargé ou dissimulé** : `curl … | sh` (ou `| python3`, `| sudo bash`, `| iex`…), `bash <(curl …)`, `bash -c`, `python -c`, `base64 -d`… ;
+- le **texte du `SKILL.md`** demande d'**exécuter du code téléchargé ou dissimulé** : `curl … | sh` (ou `| python3`, `| sudo -u root bash`, `| xargs sh`, `| iex`…), `bash <(curl …)`, `iex (iwr …)`, `bash -c`, `python -c`, `base64 -d`… ;
 - le **`SKILL.md`** est **introuvable, illisible, vide, ou n'est qu'un lien symbolique** : le texte que Claude suivrait n'a pas pu être vérifié ;
 - le dossier du skill contient un **lien symbolique** ou un **sous-module Git** : leur contenu n'apparaît pas dans l'arborescence GitHub, il ne peut donc pas être vérifié.
 
@@ -234,7 +234,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **179 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13 : `python3 -m unittest discover -s tests`
+- **186 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13 : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
 - Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 
