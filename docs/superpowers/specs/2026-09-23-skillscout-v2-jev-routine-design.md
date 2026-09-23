@@ -303,12 +303,28 @@ Tous sans réseau, sauf le banc.
 6. **`install`** : contenu exact, renommage atomique, nettoyage sur échec,
    conflit de nom, manifeste ; `uninstall` retire un skill du manifeste et
    **laisse intact un skill hors manifeste** portant le nom demandé.
-7. **Banc de calibration Jev** (script séparé, hors CI, appelle la vraie API) :
-   ≈ 20 skills réputés sains (superpowers, anthropic, vercel…) + ≈ 15 SKILL.md
-   piégés fabriqués (exfiltration en langage courant, modification de
-   `settings.json`, « ne le dis pas à l'utilisateur », injection visant
-   l'évaluateur, description mensongère…). Critère : **zéro piège installable** ;
-   taux de faux refus sur les sains mesuré et consigné.
+7. **Banc de calibration Jev** (`bench/calibrate.py`, script séparé, hors CI,
+   appelle la vraie API TypeSafe et GitHub) : corpus (A) skills réputés sains
+   (obra/superpowers, anthropics/skills, vercel-labs/skills), pour mesurer le
+   taux de refus de SÉCURITÉ à tort ; corpus (B) de vrais skills de skills.sh
+   déjà signalés par le tri déterministe (motifs sensibles ou instructions
+   d'exécution), listés tels quels pour relecture humaine — ils restent de
+   toute façon **non installables** (`precheck` refuse tout `content_hits`),
+   Jev n'ajoutant que des refus. Aucun SKILL.md piégé fabriqué (P13).
+
+   Résultats (2026-09-23, 44 appels Jev) : (A) 13/18 refus de sécurité à tort
+   (72 %), très au-dessus du seuil de 25 % retenu — dominés par `off_purpose`
+   (seuil 0,20 franchi de justesse sur 10 des 18 skills, valeurs 0,20 à 0,35)
+   et `destruction` (5 skills, 0,26 à 0,82, avec gravité ≥ seuil sur 5 d'entre
+   eux, 1,3 à 1,8) ; `secrets` (1), `manipulation` (1) et `download_exec` (1)
+   isolés ; `anthropics/skills/mcp-builder` non jugé (texte au-delà de
+   `JEV_TEXT_LIMIT`). Décision de reformulation des questions laissée au
+   contrôleur (Task 14, Step 3) ; seuils et questions inchangés dans cette
+   tâche. (B) 4/25 skills examinés signalés par les motifs mais jugés propres
+   par Jev, à relire humainement : `flowkit-labs/skills/reddit-automation`,
+   `wshobson/agents/python-configuration`,
+   `anthropics/claude-plugins-official/claude-automation-recommender`,
+   `apollographql/skills/skill-creator`.
 
 ## Spikes en tête de plan
 
