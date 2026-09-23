@@ -114,8 +114,8 @@ class TestInstallVerdict(unittest.TestCase):
     def test_bornes_de_danger_et_gravite(self):
         self.assertIsNone(v.install_verdict(judged(manipulation=0.199)))
         self.assertIn("manipulation", v.install_verdict(judged(manipulation=0.20)))
-        self.assertIsNone(v.install_verdict(judged(severity=0.99)))
-        self.assertIn("gravité", v.install_verdict(judged(severity=1.0)))
+        self.assertIsNone(v.install_verdict(judged(severity=1.99)))
+        self.assertIn("gravité", v.install_verdict(judged(severity=2.0)))
 
     def test_pertinence_et_substance(self):
         self.assertIn("pertinent", v.install_verdict(judged(meta=1.99, stack=1.99)))

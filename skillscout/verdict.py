@@ -23,7 +23,11 @@ MANUAL_BLOCK_MID = 0.70     # … ou au-delà de ceci avec une gravité ≥ MANU
 MANUAL_SEVERITY = 2.0
 MANUAL_FLAG = 0.35          # ⚠ affiché
 INSTALL_DANGER_MAX = 0.20   # installation automatique : n'importe quel danger ≥
-INSTALL_SEVERITY_MAX = 1.0
+INSTALL_SEVERITY_MAX = 2.0  # relevé de 1,0 à 2,0 par décision de l'utilisateur le
+                             # 2026-09-23, après calibration (Task 14) : avec les
+                             # questions v2, ce seuil ramène le taux de faux refus
+                             # sains de 9/18 à 7/18 sans rendre propre aucun skill
+                             # signalé réel (tous ont par ailleurs un danger ≥ 0,20)
 INSTALL_RELEVANCE_MIN = 2.0
 INSTALL_SUBSTANCE_MIN = 2.0
 

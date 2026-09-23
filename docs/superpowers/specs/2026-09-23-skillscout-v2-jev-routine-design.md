@@ -189,7 +189,7 @@ Points de départ, à calibrer (§ Tests, banc).
 
 | | Recherche manuelle | Installation automatique |
 |---|---|---|
-| Écarté | un danger ≥ 0,85, **ou** ≥ 0,70 avec `severity` ≥ 2 | un danger ≥ 0,20, **ou** `severity` ≥ 1 |
+| Écarté | un danger ≥ 0,85, **ou** ≥ 0,70 avec `severity` ≥ 2 | un danger ≥ 0,20, **ou** `severity` ≥ 2 (relevé de 1 à 2 par décision de l'utilisateur le 2026-09-23, après calibration) |
 | ⚠ affiché | un danger ≥ 0,35 (nom du danger + valeur) | sans objet |
 | Pertinence | tri par `need`, puis score de confiance | (`meta` ≥ 2 **ou** `stack` ≥ 2) **et** `substance` ≥ 2 |
 
@@ -363,6 +363,21 @@ Tous sans réseau, sauf le banc.
    skills nouvellement découverts (`alinaqi/maggy/supabase-nextjs`,
    `alinaqi/maggy/supabase`), jamais évalués en v1. Décision de seuils
    toujours laissée au contrôleur ; seuils inchangés.
+
+   **Décision utilisateur — seuil de gravité relevé à 2** (2026-09-23, après
+   calibration) : `INSTALL_SEVERITY_MAX` passe de 1,0 à 2,0 (seuils de
+   danger inchangés, 0,20). Avec les questions v2 et ce seuil, recalculé sur
+   les scores du run v2 sans nouvel appel Jev : (A) 7/18 refus de sécurité à
+   tort (39 %), contre 9/18 (50 %) sans ce relèvement — `brainstorming`,
+   `test-driven-development`, `systematic-debugging`,
+   `subagent-driven-development`, `doc-coauthoring` et `find-skills` refusés
+   par un danger ≥ 0,20 (indépendant du seuil de gravité) ; `mcp-builder`
+   toujours non jugé (texte trop long). `executing-plans` et
+   `finishing-a-development-branch`, qui n'étaient refusés que sur la
+   gravité (1,3 et 1,5, sous le nouveau seuil de 2,0), passent. (B) inchangée
+   à 7/25 propres : sur les skills signalés réels du run v2, tout skill dont
+   la gravité atteignait 1 avait par ailleurs un danger ≥ 0,20, donc aucun
+   ne devient propre avec ce seuil relevé.
 
 ## Spikes en tête de plan
 
