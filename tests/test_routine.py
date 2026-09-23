@@ -120,19 +120,18 @@ result = routine.acquire_lock(paths.lock_file)
 print("fail" if result else "ok", flush=True)
 sys.stdin.read()
 """
-        proc = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        try:
-            import time
-            time.sleep(0.1)
+        with subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
             line = proc.stdout.readline()
             self.assertEqual(line.strip(), "ok")
+            self.assertFalse(routine.acquire_lock(lock))
             routine.release_lock(lock)
             self.assertTrue(routine.acquire_lock(lock))
             routine.release_lock(lock)
-        finally:
-            proc.stdin.close()
+            proc.kill()
             proc.wait(timeout=10)
+        self.assertTrue(routine.acquire_lock(lock))
+        routine.release_lock(lock)
 
 
 class TestDiscover(Base):
