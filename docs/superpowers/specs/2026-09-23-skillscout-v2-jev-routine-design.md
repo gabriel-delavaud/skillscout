@@ -312,12 +312,12 @@ Tous sans réseau, sauf le banc.
 
 ## Spikes en tête de plan
 
-| # | Question | Conséquence |
-|---|---|---|
-| S1 | Taille maximale de `state` acceptée par Jev | Fixe la limite au-delà de laquelle un skill est « non jugé » |
-| S2 | Latence et coût d'un appel (≈ 11 questions) | Fixe le parallélisme et confirme ≈ 100 appels/semaine acceptables |
-| S3 | Existe-t-il un type de question renvoyant du texte ? | Amélioration ultérieure de la ligne de pertinence |
-| S4 | Forme exacte du flux RSC `initialSkills` sur /trending et /hot | Parseur et fixtures |
+| # | Question | Conséquence | Résultat (2026-09-23) |
+|---|---|---|---|
+| S1 | Taille maximale de `state` acceptée par Jev | Fixe la limite au-delà de laquelle un skill est « non jugé » | Sonde `bench/jev_probe.py` : 128 000 caractères passent (`status=200`, réponse complète) ; 256 000 échouent (`400 max_tokens_exceeded`). Retenu : 128 000 × 0,8 = 102 400, arrondi au millier inférieur → `verdict.JEV_TEXT_LIMIT = 102_000` |
+| S2 | Latence et coût d'un appel (≈ 11 questions) | Fixe le parallélisme et confirme ≈ 100 appels/semaine acceptables | Latence médiane 0,34 s sur 5 appels séquentiels (state à 4000 caractères) → `max(15, ceil(3 × 0,34)) = 15` → `jev.TIMEOUT = 15.0` (inchangée). 4 appels en parallèle : aucun `429` → `verdict.JEV_WORKERS = 4` (inchangée) |
+| S3 | Existe-t-il un type de question renvoyant du texte ? | Amélioration ultérieure de la ligne de pertinence | Types essayés `text`, `explain`, `summary` : les trois renvoient `400 api_usage_error` (« Invalid request »). Aucun type texte trouvé ; aucune constante à changer |
+| S4 | Forme exacte du flux RSC `initialSkills` sur /trending et /hot | Parseur et fixtures | tranché : `initialSkills`, 600 entrées, un seul `self.__next_f.push` (P12 du plan) |
 
 ## Limites connues
 

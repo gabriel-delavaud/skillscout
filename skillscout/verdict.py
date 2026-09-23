@@ -11,8 +11,12 @@ from dataclasses import dataclass, field
 from . import jev, trust
 
 QUESTIONS_VERSION = 1       # à incrémenter à toute modification : invalide le cache
-JEV_TEXT_LIMIT = 60_000     # Task 0, S1 : au-delà, le skill est « non jugé »
-JEV_WORKERS = 4             # Task 0, S2 : appels Jev simultanés
+JEV_TEXT_LIMIT = 102_000    # Task 0, S1 : au-delà, le skill est « non jugé ». Mesurée le
+                             # 2026-09-23 : 128 000 caractères passent (complet), 256 000
+                             # échouent (400 max_tokens_exceeded) ; 128 000 × 0,8 = 102 400,
+                             # arrondi au millier inférieur.
+JEV_WORKERS = 4             # Task 0, S2 : appels Jev simultanés. Mesurée le 2026-09-23 :
+                             # aucun 429 sur 4 appels parallèles (state à 4000 caractères).
 
 MANUAL_BLOCK = 0.85         # recherche manuelle : exclu au-delà…
 MANUAL_BLOCK_MID = 0.70     # … ou au-delà de ceci avec une gravité ≥ MANUAL_SEVERITY

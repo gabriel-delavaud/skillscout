@@ -10,7 +10,9 @@ from . import net
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-1.13.0"        # figé : les seuils de verdict.py sont calibrés pour lui
-TIMEOUT = 15.0              # Task 0, S2
+TIMEOUT = 15.0              # Task 0, S2 : latence médiane 0,34 s (5 appels séquentiels,
+                             # state à 4000 caractères) ; max(15, ceil(3 × 0,34)) = 15,
+                             # mesurée le 2026-09-23
 BREAKER_THRESHOLD = 3       # échecs consécutifs (chacun après une relance)
 BREAKER_COOLDOWN_S = 300.0
 ENV_KEY = "TYPESAFE_API_KEY"
