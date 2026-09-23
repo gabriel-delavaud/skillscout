@@ -1,4 +1,4 @@
-import json, os, shutil, sys, tempfile, unittest
+import json, os, shutil, stat, sys, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -126,6 +126,47 @@ class TestInstall(Base):
         self.install(name="neuf")
         self.assertEqual(install.present_names(self.paths), {"existant", "neuf"})
 
+    # -- Fix round 1 : le rollback doit couvrir toute erreur, pas seulement OSError/InstallError --
+
+    def test_scores_non_serialisables_rien_n_est_ecrit(self):
+        data, expected = blobs(SKILL_md="# tdd\n")
+        with self.assertRaises(install.InstallError):
+            install.install_skill(row(), data, expected, self.paths, run_id="r",
+                                  scores={"k": {1, 2}}, now=NOW)  # un set : json.dumps refuse
+        self.assertFalse((self.paths.skills_dir / "tdd").exists())
+        self.assertEqual(install.installed(self.paths), [])
+        self.assertFalse(self.paths.staging_dir.exists())
+
+    def test_source_absente_rien_n_est_ecrit(self):
+        data, expected = blobs(SKILL_md="# tdd\n")
+        bad_row = {"skill_id": "tdd", "tree_sha": "t" * 40}  # pas de "source"
+        with self.assertRaises(install.InstallError):
+            install.install_skill(bad_row, data, expected, self.paths, run_id="r",
+                                  scores={}, now=NOW)
+        self.assertFalse((self.paths.skills_dir / "tdd").exists())
+        self.assertEqual(install.installed(self.paths), [])
+        self.assertFalse(self.paths.staging_dir.exists())
+
+    def test_manifeste_leve_une_erreur_non_os_annule(self):
+        with patch("skillscout.install._write_manifest", side_effect=RuntimeError("boom")):
+            with self.assertRaises(install.InstallError):
+                self.install()
+        self.assertFalse((self.paths.skills_dir / "tdd").exists())
+        self.assertEqual(install.installed(self.paths), [])
+
+    # -- Fix round 1 : deux chemins qui ne diffèrent que par la casse --
+
+    def test_collision_de_casse_refusee(self):
+        cas = ({"SKILL_md": "x", "refs__a_md": "a", "REFS__b_md": "b"},
+               {"SKILL_md": "x", "skill_md": "y"})
+        for files in cas:
+            data, expected = blobs(**files)
+            with self.assertRaises(install.InstallError, msg=str(files)):
+                install.install_skill(row(), data, expected, self.paths, run_id="r",
+                                      scores={}, now=NOW)
+        self.assertFalse((self.paths.skills_dir / "tdd").exists())
+        self.assertFalse(self.paths.staging_dir.exists())
+
 
 class TestUninstall(Base):
     def test_retire_ce_qui_a_ete_installe(self):
@@ -166,6 +207,39 @@ class TestUninstall(Base):
         removed, _ = install.uninstall_last(self.paths)
         self.assertEqual([p.name for p in removed], ["vieux"])
         self.assertEqual(install.uninstall_last(self.paths), ([], []))
+
+    # -- Fix round 1 : désinstallation atomique (déplacement hors de skills_dir) --
+
+    def test_desinstalle_un_fichier_en_lecture_seule(self):
+        target = self.install()
+        skill_md = target / "SKILL.md"
+        skill_md.chmod(stat.S_IREAD)
+        self.addCleanup(lambda: skill_md.chmod(stat.S_IWRITE) if skill_md.exists() else None)
+        result = install.uninstall("tdd", self.paths)
+        self.assertEqual(result, target)
+        self.assertFalse(target.exists())
+        self.assertEqual(install.installed(self.paths), [])
+
+    def test_deplacement_hors_de_skills_echoue(self):
+        target = self.install()
+        with patch("skillscout.install.os.rename", side_effect=OSError("verrouillé")):
+            with self.assertRaises(install.InstallError):
+                install.uninstall("tdd", self.paths)
+        self.assertTrue(target.exists())
+        self.assertEqual((target / "SKILL.md").read_bytes(), b"# tdd\n")
+        self.assertEqual((target / "refs" / "a.md").read_bytes(), b"a\n")
+        [entry] = install.installed(self.paths)
+        self.assertEqual(entry["name"], "tdd")
+
+    def test_uninstall_last_continue_apres_un_echec(self):
+        self.install(name="bon", run_id="r9")
+        mauvais = self.install(name="mauvais", run_id="r9")
+        (mauvais / "SKILL.md").write_text("modifié après coup", encoding="utf-8")
+        removed, errors = install.uninstall_last(self.paths)
+        self.assertEqual([p.name for p in removed], ["bon"])
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(mauvais.exists())
+        self.assertEqual([e["name"] for e in install.installed(self.paths)], ["mauvais"])
 
 
 if __name__ == "__main__":

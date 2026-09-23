@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import stat
 from pathlib import Path
 
 from . import config, github
@@ -101,11 +102,28 @@ def _check(name: str, files: dict[str, bytes], expected: dict[str, str]) -> None
         raise InstallError(f"{name} : fichiers incomplets")
     if len(files) > MAX_FILES or sum(map(len, files.values())) > MAX_TOTAL_BYTES:
         raise InstallError(f"{name} : trop de fichiers ou trop volumineux")
+    # Deux chemins qui ne diffèrent que par la casse partagent un seul fichier
+    # sur un disque insensible à la casse (Windows) : le contenu réellement
+    # posé ne correspondrait alors plus jamais à ce que le manifeste a promis
+    # pour l'un des deux, et la désinstallation serait bloquée pour toujours.
+    lowered_paths: dict[str, str] = {}
+    lowered_dirs: dict[str, str] = {}
     for rel, data in files.items():
         if not is_safe_relpath(rel) or not is_text_file(rel):
             raise InstallError(f"{name} : fichier refusé {rel!r}")
         if github.git_blob_sha(data) != expected[rel]:
             raise InstallError(f"{name} : {rel} ne correspond pas à l'empreinte jugée")
+        key = rel.lower()
+        if lowered_paths.setdefault(key, rel) != rel:
+            raise InstallError(f"{name} : {rel!r} et {lowered_paths[key]!r} ne diffèrent que "
+                               "par la casse")
+        prefix = ""
+        for segment in rel.split("/")[:-1]:
+            prefix = f"{prefix}/{segment}" if prefix else segment
+            pkey = prefix.lower()
+            if lowered_dirs.setdefault(pkey, prefix) != prefix:
+                raise InstallError(f"{name} : dossiers {prefix!r} et {lowered_dirs[pkey]!r} ne "
+                                   "diffèrent que par la casse")
 
 
 def install_skill(row: dict, files: dict[str, bytes], expected: dict[str, str],
@@ -118,6 +136,21 @@ def install_skill(row: dict, files: dict[str, bytes], expected: dict[str, str],
     target = paths.skills_dir / name
     if target.exists() or name.lower() in present_names(paths):
         raise InstallError(f"{name} : un skill porte déjà ce nom, rien n'est écrasé")
+    # L'entrée de manifeste et sa forme JSON sont construites et validées AVANT
+    # de toucher skills_dir : une ligne mal formée (source manquante, scores non
+    # sérialisables) doit échouer pendant que rien n'existe encore sur le disque,
+    # pas après le renommage qui rend le skill visible.
+    try:
+        entry = {"name": name, "source": row["source"], "skill_id": row["skill_id"],
+                 "tree_sha": row.get("tree_sha", ""), "files": dict(expected),
+                 "installed_at": now, "run_id": run_id, "scores": scores}
+        manifest_data = read_manifest(paths)
+        manifest_data["skills"].append(entry)
+        json.dumps(manifest_data, ensure_ascii=False, indent=2)  # valide tôt, jeté ensuite
+    except InstallError:
+        raise
+    except (KeyError, TypeError, ValueError) as e:
+        raise InstallError(f"{name} : entrée de manifeste invalide ({e})") from e
     paths.staging_dir.mkdir(parents=True, exist_ok=True)
     stage = paths.staging_dir / f"{name}-{os.getpid()}"
     shutil.rmtree(stage, ignore_errors=True)
@@ -137,16 +170,17 @@ def install_skill(row: dict, files: dict[str, bytes], expected: dict[str, str],
     except OSError as e:
         shutil.rmtree(stage, ignore_errors=True)
         raise InstallError(f"{name} : écriture impossible ({e})") from e
-    entry = {"name": name, "source": row["source"], "skill_id": row["skill_id"],
-             "tree_sha": row.get("tree_sha", ""), "files": dict(expected),
-             "installed_at": now, "run_id": run_id, "scores": scores}
+    # À partir d'ici, le dossier existe dans skills_dir : toute panne, quelle
+    # qu'elle soit, doit le retirer plutôt que laisser un skill installé sans
+    # entrée de manifeste (impossible à désinstaller, et bloquant une
+    # réinstallation ultérieure sous le même nom).
     try:
-        data = read_manifest(paths)
-        data["skills"].append(entry)
-        _write_manifest(paths, data)
-    except (OSError, InstallError) as e:
-        shutil.rmtree(target, ignore_errors=True)  # sans manifeste, pas de désinstallation possible
-        raise InstallError(f"{name} : manifeste non écrit, installation annulée ({e})") from e
+        _write_manifest(paths, manifest_data)
+    except BaseException as e:
+        shutil.rmtree(target, ignore_errors=True)
+        if isinstance(e, Exception):
+            raise InstallError(f"{name} : manifeste non écrit, installation annulée ({e})") from e
+        raise
     return target
 
 
@@ -169,21 +203,58 @@ def _tree_shas(root: Path) -> dict[str, str] | None:
     return out
 
 
+def _clear_readonly_and_retry(func, path, exc_info):
+    """Gestionnaire d'erreur pour `shutil.rmtree` : un fichier posé en lecture
+    seule (courant pour un clone de dépôt) ne doit pas laisser un reste dans
+    le dossier de préparation. Best effort : si ça échoue encore, le reste
+    demeure hors de skills_dir, ce qui ne met plus rien en danger."""
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
+        pass
+
+
 def uninstall(name: str, paths: config.Paths) -> Path:
     """Retire un skill installé par skillscout. Refuse tout dossier absent du
-    manifeste, ou modifié depuis l'installation."""
+    manifeste, ou modifié depuis l'installation. Le dossier est d'abord
+    déplacé d'un bloc hors de skills_dir (le symétrique de l'installation) :
+    à aucun moment il n'est ni à moitié supprimé ni à moitié présent, et si
+    le déplacement échoue, le skill et le manifeste restent intacts."""
     data = read_manifest(paths)
     entry = next((e for e in data["skills"] if e["name"].lower() == name.lower()), None)
     if entry is None:
         raise InstallError(f"{name} n'a pas été installé par skillscout : rien n'est supprimé")
     target = paths.skills_dir / entry["name"]
+    moved = None
     if target.exists() or target.is_symlink():
-        if not _is_plain_dir(target) or _tree_shas(target) != entry["files"]:
+        try:
+            unchanged = _is_plain_dir(target) and _tree_shas(target) == entry["files"]
+        except OSError as e:
+            raise InstallError(f"{target} illisible, désinstallation refusée ({e})") from e
+        if not unchanged:
             raise InstallError(f"{target} a changé depuis son installation : supprimez-le "
                                "vous-même si c'est voulu")
-        shutil.rmtree(target)
+        paths.staging_dir.mkdir(parents=True, exist_ok=True)
+        moved = paths.staging_dir / f"{entry['name']}-removed-{os.getpid()}"
+        shutil.rmtree(moved, ignore_errors=True)
+        try:
+            os.rename(target, moved)                # même volume : atomique, ou échoue net
+        except OSError as e:
+            raise InstallError(f"{target} : retrait impossible ({e})") from e
     data["skills"] = [e for e in data["skills"] if e is not entry]
-    _write_manifest(paths, data)
+    try:
+        _write_manifest(paths, data)
+    except OSError as e:
+        if moved is not None:
+            try:                                     # on remet le dossier en place : le
+                os.rename(moved, target)              # manifeste au repos le dit encore installé
+            except OSError:
+                pass
+        raise InstallError(f"{target} : manifeste non mis à jour, désinstallation annulée "
+                           f"({e})") from e
+    if moved is not None:
+        shutil.rmtree(moved, onerror=_clear_readonly_and_retry)
     return target
 
 
