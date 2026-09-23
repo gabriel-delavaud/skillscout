@@ -1,7 +1,61 @@
 """Inspection GitHub complète d'un candidat, jusqu'à l'évaluation de confiance."""
 from __future__ import annotations
 
+import re
+
 from . import github, trust
+
+
+_FM_KEY = re.compile(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$")
+_BLOCK_MARKERS = (">", "|", ">-", "|-", ">+", "|+")
+
+
+def _unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1].replace('\\"', '"')
+    if len(value) >= 2 and value[0] == value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    return value
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    """Clés de premier niveau du frontmatter YAML d'un SKILL.md. Sous-ensemble
+    volontaire (bibliothèque standard) : `clé: valeur`, guillemets, blocs
+    `>` et `|`, suite indentée d'une valeur simple. Les clés imbriquées et les
+    listes sont ignorées. {} si le frontmatter est absent ou non fermé."""
+    lines = text.lstrip("﻿").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() in ("---", "...")), None)
+    if end is None:
+        return {}
+    out: dict[str, str] = {}
+    key, block, style, plain = None, None, "", False
+    for line in lines[1:end]:
+        indented = line[:1] in (" ", "\t")
+        if block is not None and (indented or not line.strip()):
+            block.append(line.strip())
+            continue
+        if block is not None:
+            out[key] = (" ".join(x for x in block if x) if style == ">"
+                        else "\n".join(block).strip())
+            block = None
+        if indented and plain and out.get(key):
+            out[key] += " " + line.strip()          # suite d'une valeur simple
+            continue
+        m = _FM_KEY.match(line)
+        if not m:
+            plain = False
+            continue
+        key, value = m.group(1), m.group(2).strip()
+        if value in _BLOCK_MARKERS:
+            block, style, plain = [], value[0], False
+            continue
+        out[key] = _unquote(value)
+        plain = bool(value) and value[0] not in "\"'"
+    if block is not None:
+        out[key] = " ".join(x for x in block if x) if style == ">" else "\n".join(block).strip()
+    return out
 
 
 def _read_skill_mds(source: str, md_paths: list[str], blobs: dict,
@@ -59,6 +113,14 @@ def inspect_candidate(cand: dict, cache: github.Cache, now: float) -> dict:
         # Le texte complet est conservé : Jev le jugera en entier.
         body = full
 
+    blobs = snap.get("blobs", {})
+    row["skill_files"] = {p: blobs[p] for p in scoped if p in blobs}
+    row["skill_md_paths"] = trust.locate_skill_mds(paths, cand["skill_id"])
+    row["exec_bits_in_scope"] = [p for p in scoped if p in set(exec_bits)]
+    row["opaque_in_scope"] = [p for p in scoped if p in set(opaque)]
+    fm = parse_frontmatter(body) if body else {}
+    row["description"] = fm.get("description", "")
+    row["md_name"] = fm.get("name", "")
     row["body"] = body
     row["skill_md_path"] = md_path
     row["skill_md_sha"] = md_sha

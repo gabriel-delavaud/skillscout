@@ -95,7 +95,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     if args.json:
-        hide = {"body", "paths"}
+        hide = {"body", "paths", "skill_files"}
         print(json.dumps([{k: v for k, v in r.items() if k not in hide}
                           for r in top], ensure_ascii=False, indent=2))
         return 0
