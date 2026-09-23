@@ -261,6 +261,122 @@ def _shown(paths: list[str], n: int = 3) -> str:
     return ", ".join(paths[:n]) + (", …" if len(paths) > n else "")
 
 
+def _identity_exclusion(cand: dict, repo_meta: dict) -> str | None:
+    # L'identité vient de l'API (`repo_meta`), jamais de la chaîne `source`
+    # fournie par skills.sh : `gh api repos/{source}` suit silencieusement un
+    # renommage/transfert, donc `source` peut pointer vers un autre dépôt que
+    # celui réellement interrogé. Aucun repli sur `cand["source"]`.
+    owner = repo_meta.get("owner_login") or ""
+    full_name = repo_meta.get("full_name") or ""
+    if not owner or not full_name:
+        return (f"métadonnées GitHub incomplètes pour {cand['source']} : "
+                f"l'identité de l'éditeur ne peut pas être confirmée")
+    if full_name.lower() != cand["source"].lower():
+        return (f"le dépôt {cand['source']} redirige vers {full_name} : son "
+                f"identité ne peut pas être confirmée")
+    return None
+
+
+def _structure_exclusion(owner: str, trusted: bool, truncated: bool,
+                         hidden: list[str]) -> str | None:
+    if trusted:
+        return None
+    if truncated:
+        return ("arborescence du dépôt tronquée par GitHub : la liste des "
+                "fichiers est incomplète et ne peut pas garantir l'absence de "
+                "code exécutable")
+    if hidden:
+        return (f"{len(hidden)} " + _plural(len(hidden), "lien symbolique ou sous-module",
+                                            "liens symboliques ou sous-modules")
+                + f" ({_shown(hidden)}) : leur contenu n'apparaît pas dans l'arbre et "
+                f"ne peut pas être vérifié — éditeur non vérifié ({owner})")
+    return None
+
+
+def _execution_exclusion(owner: str, trusted: bool, execs: list[str],
+                         exec_instr: list[str]) -> str | None:
+    if trusted or not (execs or exec_instr):
+        return None
+    motifs = []
+    if execs:
+        motifs.append(f"{len(execs)} fichier(s) exécutable(s) ({_shown(execs)})")
+    if exec_instr:
+        motifs.append("SKILL.md demandant d'exécuter du code : " + ", ".join(exec_instr))
+    return " ; ".join(motifs) + f" — éditeur non vérifié ({owner})"
+
+
+def _unread_text_exclusion(owner: str, trusted: bool, check_text: bool,
+                           body: str | None) -> str | None:
+    # Le texte est ce que l'agent suivra. Ne pas l'avoir lu, ne pas savoir
+    # lequel lire, ou n'y trouver que du vide, n'est pas l'avoir trouvé propre.
+    if trusted or not check_text or (body or "").strip():
+        return None
+    return ("SKILL.md introuvable, illisible ou vide : le texte "
+            "que l'agent suivrait n'a pas pu être vérifié — "
+            f"éditeur non vérifié ({owner})")
+
+
+def _provenance_score(cand: dict, repo_meta: dict, owner_meta: dict, owner: str,
+                      trusted: bool, now: float) -> tuple[float, list[str]]:
+    """Points de provenance, de popularité et de fraîcheur, avec leurs drapeaux."""
+    score = 0.0
+    flags: list[str] = []
+    if owner.lower() in TRUSTED_PUBLISHERS:
+        score += 50.0
+        flags.append("éditeur en liste blanche")
+    elif trusted:
+        # Le simple statut « Organization » ne vaut rien : une org se crée en
+        # trente secondes. Seule une org passant les seuils marque des points.
+        score += 15.0
+        flags.append(
+            f"organisation : ≥{MIN_OWNER_AGE_DAYS} j, "
+            f"≥{MIN_PUBLIC_REPOS} dépôts d'origine, dépôt actif"
+        )
+    if _age_days(owner_meta.get("created_at", ""), now) >= MIN_OWNER_AGE_DAYS:
+        score += 10.0
+    if _origin_repos(owner_meta) >= MIN_PUBLIC_REPOS:
+        score += 5.0
+    score += min(15.0, 5.0 * math.log10(1 + repo_meta.get("stars", 0)))
+    stale = _age_days(repo_meta.get("pushed_at", ""), now)
+    if stale <= 90:
+        score += 10.0
+    elif stale <= MAX_STALE_DAYS:
+        score += 5.0
+    else:
+        flags.append("⚠ non maintenu depuis plus d'un an")
+    score += min(10.0, 2.5 * math.log10(1 + cand.get("installs", 0)))
+    return score, flags
+
+
+def _risk_adjustments(execs: list[str], hidden: list[str], exec_instr: list[str],
+                      sensitive: list[str], check_text: bool,
+                      body: str | None) -> tuple[list[float], list[str]]:
+    """Pénalités (dans l'ordre où elles s'appliquent) et drapeaux de risque."""
+    penalties: list[float] = []
+    flags: list[str] = []
+    if execs:
+        penalties.append(EXEC_PENALTY)
+        flags.append(f"⚠ {len(execs)} "
+                     f"{_plural(len(execs), 'fichier exécutable', 'fichiers exécutables')}")
+    else:
+        # « Sans fichier exécutable » est un fait mesuré sur l'arborescence,
+        # pas un brevet de sûreté : le texte du SKILL.md est analysé à part.
+        flags.append("sans fichier exécutable")
+    if hidden:
+        flags.append(f"⚠ {len(hidden)} " + _plural(
+            len(hidden), "lien symbolique ou sous-module",
+            "liens symboliques ou sous-modules"))
+    if check_text and body is None:
+        flags.append("⚠ SKILL.md non lu")
+    if exec_instr:
+        penalties.append(EXEC_PENALTY)
+        flags.append("⚠ SKILL.md : " + ", ".join(exec_instr))
+    for label in sensitive:
+        penalties.append(CONTENT_PENALTY)
+        flags.append(f"⚠ SKILL.md : {label}")
+    return penalties, flags
+
+
 def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
              paths: list[str], now: float, truncated: bool,
              body: str | None = None, exec_bits=(), opaque=(),
@@ -274,134 +390,40 @@ def evaluate(cand: dict, repo_meta: dict, owner_meta: dict,
     le contenu. `check_text=False` limite l'évaluation à la structure
     (identité, troncature, fichiers, entrées opaques) : le texte n'est alors
     ni analysé ni exigé."""
-    # L'identité vient de l'API (`repo_meta`), jamais de la chaîne `source`
-    # fournie par skills.sh : `gh api repos/{source}` suit silencieusement un
-    # renommage/transfert, donc `source` peut pointer vers un autre dépôt que
-    # celui réellement interrogé. Aucun repli sur `cand["source"]`.
-    owner = repo_meta.get("owner_login") or ""
-    full_name = repo_meta.get("full_name") or ""
-
     out = dict(cand, excluded=False, reason=None, score=0.0, flags=[],
                executables=[], content_hits=[])
 
-    if not owner or not full_name:
+    def excluded(reason: str) -> dict:
         out["excluded"] = True
-        out["reason"] = (
-            f"métadonnées GitHub incomplètes pour {cand['source']} : "
-            f"l'identité de l'éditeur ne peut pas être confirmée"
-        )
+        out["reason"] = reason
         return out
 
-    if full_name.lower() != cand["source"].lower():
-        out["excluded"] = True
-        out["reason"] = (
-            f"le dépôt {cand['source']} redirige vers {full_name} : son "
-            f"identité ne peut pas être confirmée"
-        )
-        return out
-
+    reason = _identity_exclusion(cand, repo_meta)
+    if reason:
+        return excluded(reason)
+    owner = repo_meta["owner_login"]
     trusted = is_trusted_publisher(owner, owner_meta, repo_meta, now)
-
-    if truncated and not trusted:
-        out["excluded"] = True
-        out["reason"] = (
-            "arborescence du dépôt tronquée par GitHub : la liste des "
-            "fichiers est incomplète et ne peut pas garantir l'absence de "
-            "code exécutable"
-        )
-        return out
 
     opaque_set = set(opaque)
     hidden = [p for p in paths if p in opaque_set]
-    if hidden and not trusted:
-        out["excluded"] = True
-        out["reason"] = (
-            f"{len(hidden)} " + _plural(len(hidden), "lien symbolique ou sous-module",
-                                        "liens symboliques ou sous-modules")
-            + f" ({_shown(hidden)}) : leur contenu n'apparaît pas dans l'arbre et "
-            f"ne peut pas être vérifié — éditeur non vérifié ({owner})"
-        )
-        return out
+    reason = _structure_exclusion(owner, trusted, truncated, hidden)
+    if reason:
+        return excluded(reason)
 
     execs = find_executables(paths, exec_bits)
     exec_instr, sensitive = scan_skill_md(body) if check_text and body else ([], [])
     out["executables"] = execs
     out["content_hits"] = exec_instr + sensitive
+    reason = (_execution_exclusion(owner, trusted, execs, exec_instr)
+              or _unread_text_exclusion(owner, trusted, check_text, body))
+    if reason:
+        return excluded(reason)
 
-    if (execs or exec_instr) and not trusted:
-        motifs = []
-        if execs:
-            motifs.append(f"{len(execs)} fichier(s) exécutable(s) ({_shown(execs)})")
-        if exec_instr:
-            motifs.append("SKILL.md demandant d'exécuter du code : "
-                          + ", ".join(exec_instr))
-        out["excluded"] = True
-        out["reason"] = " ; ".join(motifs) + f" — éditeur non vérifié ({owner})"
-        return out
-
-    if check_text and not (body or "").strip() and not trusted:
-        # Le texte est ce que l'agent suivra. Ne pas l'avoir lu, ne pas savoir
-        # lequel lire, ou n'y trouver que du vide, n'est pas l'avoir trouvé propre.
-        out["excluded"] = True
-        out["reason"] = ("SKILL.md introuvable, illisible ou vide : le texte "
-                         "que l'agent suivrait n'a pas pu être vérifié — "
-                         f"éditeur non vérifié ({owner})")
-        return out
-
-    score = 0.0
-    flags: list[str] = []
-
-    if owner.lower() in TRUSTED_PUBLISHERS:
-        score += 50.0
-        flags.append("éditeur en liste blanche")
-    elif trusted:
-        # Le simple statut « Organization » ne vaut rien : une org se crée en
-        # trente secondes. Seule une org passant les seuils marque des points.
-        score += 15.0
-        flags.append(
-            f"organisation : ≥{MIN_OWNER_AGE_DAYS} j, "
-            f"≥{MIN_PUBLIC_REPOS} dépôts d'origine, dépôt actif"
-        )
-
-    if _age_days(owner_meta.get("created_at", ""), now) >= MIN_OWNER_AGE_DAYS:
-        score += 10.0
-    if _origin_repos(owner_meta) >= MIN_PUBLIC_REPOS:
-        score += 5.0
-
-    score += min(15.0, 5.0 * math.log10(1 + repo_meta.get("stars", 0)))
-
-    stale = _age_days(repo_meta.get("pushed_at", ""), now)
-    if stale <= 90:
-        score += 10.0
-    elif stale <= MAX_STALE_DAYS:
-        score += 5.0
-    else:
-        flags.append("⚠ non maintenu depuis plus d'un an")
-
-    score += min(10.0, 2.5 * math.log10(1 + cand.get("installs", 0)))
-
-    if execs:
-        score -= EXEC_PENALTY
-        flags.append(f"⚠ {len(execs)} "
-                     f"{_plural(len(execs), 'fichier exécutable', 'fichiers exécutables')}")
-    else:
-        # « Sans fichier exécutable » est un fait mesuré sur l'arborescence,
-        # pas un brevet de sûreté : le texte du SKILL.md est analysé à part.
-        flags.append("sans fichier exécutable")
-
-    if hidden:
-        flags.append(f"⚠ {len(hidden)} " + _plural(
-            len(hidden), "lien symbolique ou sous-module",
-            "liens symboliques ou sous-modules"))
-    if check_text and body is None:
-        flags.append("⚠ SKILL.md non lu")
-    if exec_instr:
-        score -= EXEC_PENALTY
-        flags.append("⚠ SKILL.md : " + ", ".join(exec_instr))
-    for label in sensitive:
-        score -= CONTENT_PENALTY
-        flags.append(f"⚠ SKILL.md : {label}")
-
+    score, flags = _provenance_score(cand, repo_meta, owner_meta, owner, trusted, now)
+    penalties, risk_flags = _risk_adjustments(execs, hidden, exec_instr, sensitive,
+                                              check_text, body)
+    for p in penalties:          # même ordre de soustraction qu'avant la refonte
+        score -= p
     out["score"] = round(score, 2)
-    out["flags"] = flags
+    out["flags"] = flags + risk_flags
     return out
