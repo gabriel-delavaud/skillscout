@@ -30,6 +30,9 @@ CACHE_SCHEMA = 5
 
 RAW_URL = "https://raw.githubusercontent.com/{source}/{branch}/{path}"
 
+# Sous pythonw (tâche planifiée), chaque `gh` ouvrirait sinon une console.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 class GhError(Exception):
     """`gh` est absent, non authentifié, ou a répondu en erreur."""
@@ -73,7 +76,7 @@ def gh_json(api_path: str):
         # et plante sur le premier caractère non latin.
         p = subprocess.run(["gh", "api", api_path], capture_output=True,
                            text=True, encoding="utf-8", errors="replace",
-                           timeout=GH_TIMEOUT)
+                           timeout=GH_TIMEOUT, creationflags=_NO_WINDOW)
     except FileNotFoundError as e:
         raise GhError("`gh` introuvable. Installez GitHub CLI et lancez `gh auth login`.") from e
     except subprocess.TimeoutExpired as e:
