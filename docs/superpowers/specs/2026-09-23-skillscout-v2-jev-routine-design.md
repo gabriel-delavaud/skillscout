@@ -173,6 +173,16 @@ rapport de routine, suivi de la description déclarée (tronquée).
 À vérifier en spike (S3) : existe-t-il un type de question qui renvoie du texte.
 Si oui, c'est une amélioration ultérieure, pas une exigence de la v2.
 
+Version 2 des questions (`QUESTIONS_VERSION = 2`, Task 14 Step 3) : après
+calibration (§ Tests, point 7), `destruction`, `off_purpose` et `severity` ont
+été reformulées pour distinguer les gestes de méthode de développement
+ordinaires (nettoyer une branche, committer, tester, planifier) d'un vrai
+danger, sans toucher aux seuils ni aux quatre autres clés de sécurité
+(`exfiltration`, `secrets`, `download_exec`, `persistence`, `manipulation`),
+correctement déclenchées sur les skills signalés réels de la liste (B). Le
+texte anglais du code (`skillscout/verdict.py`) fait référence ; les tableaux
+français ci-dessus restent des résumés.
+
 ### Seuils (`verdict.py`)
 
 Points de départ, à calibrer (§ Tests, banc).
@@ -325,6 +335,34 @@ Tous sans réseau, sauf le banc.
    `wshobson/agents/python-configuration`,
    `anthropics/claude-plugins-official/claude-automation-recommender`,
    `apollographql/skills/skill-creator`.
+
+   **Reformulation v2** (2026-09-23, décision du contrôleur, Task 14 Step 3) :
+   `destruction`, `off_purpose` et `severity` reformulées dans `verdict.py`
+   (`QUESTIONS_VERSION = 2`) pour exclure les gestes de méthode de
+   développement ordinaires (nettoyer une branche, committer, tester,
+   planifier), sans changer les seuils ni `exfiltration` / `secrets` /
+   `download_exec` / `persistence` / `manipulation`. Rejoué une fois (41
+   appels Jev). Résultat (A) : 9/18 refus de sécurité à tort (50 %, contre
+   72 % en v1) — encore au-dessus du seuil de 25 %, désormais porté par
+   `off_purpose` (2 skills, 0,20 à 0,27, dont `doc-coauthoring` nouvellement
+   refusé à 0,20 — régression mineure, au ras du seuil), `destruction`
+   (2 skills, 0,22 à 0,26) et surtout `severity` (5 skills, 1,1 à 1,5,
+   c.-à-d. le seuil `INSTALL_SEVERITY_MAX` lui-même, non touché par cette
+   tâche) ; `secrets` (1) et `download_exec` (1) inchangés ; `mcp-builder`
+   toujours non jugé (texte trop long, indépendant des questions). (B) : sur
+   les 22 skills examinés dans les deux campagnes, aucun skill réellement jugé
+   dangereux par Jev en v1 (au sens d'une réponse exploitée, hors panne
+   réseau) n'est devenu propre en v2 — `exfiltration` / `secrets` /
+   `download_exec` / `persistence` / `manipulation` continuent de signaler
+   correctement les mêmes skills. La liste « à relire » passe à 7/25 (corpus
+   légèrement différent : skills.sh est une source vivante, 3 candidats de v1
+   ont disparu du classement, 3 nouveaux sont apparus) : les 4 de v1 restent
+   propres, plus `dpearson2699/swift-ios-skills/debugging-instruments`
+   (« non jugé » en v1 par panne réseau transitoire, jugé propre en v2 — pas
+   une vraie régression, faute de jugement Jev comparable en v1) et deux
+   skills nouvellement découverts (`alinaqi/maggy/supabase-nextjs`,
+   `alinaqi/maggy/supabase`), jamais évalués en v1. Décision de seuils
+   toujours laissée au contrôleur ; seuils inchangés.
 
 ## Spikes en tête de plan
 

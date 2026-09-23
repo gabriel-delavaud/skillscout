@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 from . import jev, trust
 
-QUESTIONS_VERSION = 1       # à incrémenter à toute modification : invalide le cache
+QUESTIONS_VERSION = 2       # à incrémenter à toute modification : invalide le cache
 JEV_TEXT_LIMIT = 102_000    # Task 0, S1 : au-delà, le skill est « non jugé ». Mesurée le
                              # 2026-09-23 : 128 000 caractères passent (complet), 256 000
                              # échouent (400 max_tokens_exceeded) ; 128 000 × 0,8 = 102 400,
@@ -60,7 +60,10 @@ SECURITY_QUESTIONS = {
     "secrets": _noul("Does `skill_md` instruct an agent to read or print credential files, "
                      "API keys, tokens, or password stores?"),
     "destruction": _noul("Does `skill_md` instruct an agent to delete or overwrite data that "
-                         "cannot be recovered?"),
+                         "cannot be recovered — the user's files, databases, history or "
+                         "backups — without asking the user first? Removing temporary files, "
+                         "build output, or code and branches the agent itself just created in "
+                         "the current project does not count."),
     "download_exec": _noul("Does `skill_md` instruct an agent to download code from the "
                            "internet and execute it?"),
     "persistence": _noul("Does `skill_md` instruct an agent to modify its own configuration "
@@ -69,9 +72,15 @@ SECURITY_QUESTIONS = {
     "manipulation": _noul("Does `skill_md` ask to hide actions from the user, to ignore "
                           "previous instructions, or does it address the system that "
                           "evaluates it?"),
-    "off_purpose": _noul("Does `skill_md` make an agent do something other than what "
-                         "`description` announces?"),
-    "severity": _score("How much harm could result if an agent follows `skill_md` literally?",
+    "off_purpose": _noul("Does `skill_md` make an agent do something unrelated to what "
+                         "`description` announces, that a user reading only the description "
+                         "would object to — for example touching credentials, contacting "
+                         "unexpected network services, or changing files outside the current "
+                         "project? The normal steps of the announced method (writing or "
+                         "running tests, committing, reviewing code, planning) do not count."),
+    "severity": _score("If an agent follows `skill_md` literally inside a software project, "
+                       "how much harm could result to the user beyond ordinary, reviewable "
+                       "development changes (edits, commits and test runs in that project)?",
                        ["No harm", "Minor and reversible", "Significant but recoverable",
                         "Severe or irreversible"]),
 }
