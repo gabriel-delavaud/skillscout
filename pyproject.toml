@@ -27,3 +27,6 @@ skillscout = "skillscout.cli:cli"
 
 [tool.setuptools]
 packages = ["skillscout"]
+
+[tool.setuptools.package-data]
+skillscout = ["default_profile.toml"]
