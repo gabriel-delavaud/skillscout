@@ -3,8 +3,12 @@ Jev ne renvoie que des nombres : Noul (probabilité de « oui », 0 à 1) et
 Score (0 à 3 sur une échelle de 4 critères)."""
 from __future__ import annotations
 
+import hashlib
 import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+
+from . import jev, trust
 
 QUESTIONS_VERSION = 1       # à incrémenter à toute modification : invalide le cache
 JEV_TEXT_LIMIT = 60_000     # Task 0, S1 : au-delà, le skill est « non jugé »
@@ -175,3 +179,72 @@ def relevance_line(j: Judgement, mode: str) -> str:
     if mode == "manual":
         return f"besoin {r['need']:.1f}/3 · méta {r['meta']:.1f}/3"
     return f"méta {r['meta']:.1f}/3 · pile {r['stack']:.1f}/3"
+
+
+JEV_CACHE_TTL = 30 * 86400
+
+
+def _cache_key(row: dict, mode: str, profile: str | None) -> str:
+    prof = hashlib.sha1((profile or "").encode()).hexdigest()[:12]
+    return (f"{row['source']}:{row['skill_id']}@{row['tree_sha']}:{mode}:"
+            f"q{QUESTIONS_VERSION}:{jev.MODEL}:{prof}")
+
+
+def judge_one(row: dict, client, mode: str, *, need: str | None, profile: str | None,
+              cache, text: str | None) -> Judgement:
+    """Jugement Jev d'une ligne. Le cache (routine seulement) garde la réponse
+    brute par empreinte d'arborescence, version des questions et profil : un
+    skill inchangé n'est pas facturé deux fois. En recherche manuelle, le
+    besoin change à chaque appel : pas de cache."""
+    if text is None:
+        return unjudged("SKILL.md non lu")
+    normalized = trust._normalize(text)      # le même texte que celui du tri déterministe
+    if len(normalized) > JEV_TEXT_LIMIT:
+        return unjudged("texte trop long pour Jev")
+    cacheable = cache is not None and bool(row.get("tree_sha"))
+    if cacheable:
+        hit = cache.get(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile),
+                        JEV_CACHE_TTL)
+        if hit is not None:
+            return parse_answers(hit["answers"], mode)
+    if client is None:
+        return unjudged("TYPESAFE_API_KEY absente")
+    state = build_state(normalized, row.get("description", ""),
+                        sorted(row.get("skill_files") or {}), need=need, profile=profile)
+    answers = client.classify(state, questions_for(mode))
+    if answers is None:
+        return unjudged(client.last_error or "Jev indisponible")
+    judgement = parse_answers(answers, mode)
+    if judgement.status == "ok" and cacheable:
+        cache.put(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile),
+                  {"answers": answers})
+    return judgement
+
+
+def judge_rows(rows: list[dict], client, mode: str, *, need: str | None = None,
+               profile: str | None = None, cache=None, text_of=None,
+               workers: int = JEV_WORKERS) -> None:
+    """Pose `row["jev"]` sur chaque ligne non exclue. Jev n'ajoute que des
+    exclusions (D3) : une ligne déjà exclue n'est ni jugée ni réintégrée."""
+    text_of = text_of or (lambda r: r.get("body"))
+    todo = [r for r in rows if not r.get("excluded")]
+
+    def work(r):
+        return judge_one(r, client, mode, need=need, profile=profile, cache=cache,
+                         text=text_of(r))
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for r, judgement in zip(todo, pool.map(work, todo)):
+            r["jev"] = judgement
+
+
+def apply_manual(rows: list[dict]) -> None:
+    """Applique le régime manuel aux lignes jugées : exclusions et drapeaux."""
+    for r in rows:
+        j = r.get("jev")
+        if j is None or r.get("excluded"):
+            continue
+        reason, flags = manual_verdict(j)
+        if reason:
+            r["excluded"] = True
+            r["reason"] = reason
+        r["flags"] = list(r.get("flags", [])) + flags

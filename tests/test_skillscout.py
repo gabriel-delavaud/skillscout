@@ -516,6 +516,13 @@ class TestMain(unittest.TestCase):
         self._redirect_stderr = contextlib.redirect_stderr(io.StringIO())
         self._redirect_stderr.__enter__()
         self.addCleanup(self._redirect_stderr.__exit__, None, None, None)
+        # Aucun test ne doit appeler la vraie API Jev, même si TYPESAFE_API_KEY
+        # est posée dans l'environnement (Task 0 : visible par tout processus
+        # lancé après).
+        env = patch.dict(os.environ, {}, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("TYPESAFE_API_KEY", None)
 
     def test_recherche_simple_rend_0(self):
         cand = [{"skill_id": "s", "name": "s", "source": "etalab-ia/skills", "installs": 13}]
