@@ -281,7 +281,7 @@ paquet, `evaluate()` (≈ 150 lignes) est scindée par règle, la sortie est iso
 Critère de sortie : les 186 tests existants passent, moins ceux qui ne portent que
 sur qwen (supprimés avec lui, D1). Aucune fonctionnalité nouvelle avant ce jalon.
 `pyproject.toml` passe de `py-modules` à `packages`, point d'entrée
-`skillscout.cli:main`. La CI reste 3.11 à 3.13 ; on ajoute un job Windows, puisque la
+`skillscout.cli:cli`. La CI reste 3.11 à 3.13 ; on ajoute un job Windows, puisque la
 routine vise Windows (chemins, `schtasks`, renommage atomique).
 
 ## Tests

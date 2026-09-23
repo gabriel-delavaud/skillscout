@@ -23,7 +23,7 @@ classifiers = [
 Homepage = "https://github.com/gabriel-delavaud/skillscout"
 
 [project.scripts]
-skillscout = "skillscout:cli"
+skillscout = "skillscout.cli:cli"
 
 [tool.setuptools]
-py-modules = ["skillscout"]
+packages = ["skillscout"]
