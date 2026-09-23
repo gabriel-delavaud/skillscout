@@ -433,6 +433,38 @@ class TestPipeline(Base):
         self.assertEqual(res.installed, [])
         self.assertIn("disque plein", res.errors)
 
+    def test_rapport_non_ecrit_protege_et_journal_quand_meme(self):
+        cands, jev = self.trois()
+        with patch("skillscout.report.write_report", side_effect=OSError("disque plein")):
+            res = self.exec_routine(cands, jev=jev)
+        self.assertEqual(res.status, "ok")
+        self.assertIn("rapport non écrit", " ".join(res.errors))
+        lines = self.paths.journal.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        entry = json.loads(lines[0])
+        self.assertTrue(any("rapport non écrit" in e for e in entry["errors"]))
+
+    def test_journal_non_ecrit_ne_leve_pas(self):
+        cands, jev = self.trois()
+        with patch("skillscout.report.append_journal", side_effect=OSError("disque plein")):
+            res = self.exec_routine(cands, jev=jev)      # ne doit pas lever
+        self.assertEqual(res.status, "ok")
+        self.assertTrue((self.paths.reports_dir / "2026-W40.md").exists())
+
+    def test_rapport_ecrit_pendant_que_le_verrou_est_tenu(self):
+        cands, jev = self.trois()
+        seen = []
+
+        def check_lock_held(paths, result):
+            seen.append(routine.acquire_lock(self.paths.lock_file))
+            return self.paths.reports_dir / "2026-W40.md"
+        with patch("skillscout.report.write_report", side_effect=check_lock_held):
+            res = self.exec_routine(cands, jev=jev)
+        self.assertEqual(seen, [False])          # le verrou était tenu par l'exécution
+        self.assertEqual(res.status, "ok")
+        self.assertTrue(routine.acquire_lock(self.paths.lock_file))  # libéré ensuite
+        routine.release_lock(self.paths.lock_file)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -295,23 +295,50 @@ def _run(paths: config.Paths, client, dry_run: bool, now: float, result: RunResu
     result.upstream_changed = _upstream_changed(paths, cache, result.run_id)
 
 
+def _write_journal_safe(paths: config.Paths, result: RunResult) -> None:
+    """Le journal est la dernière trace disponible : s'il ne peut pas être
+    écrit non plus (disque plein, permission refusée, fichier brièvement
+    verrouillé sous pythonw), il n'y a plus rien à faire de plus que de ne
+    pas planter une tâche sans surveillance. L'état de l'exécution reste
+    lisible via le code de sortie / le résumé de la CLI."""
+    try:
+        report.append_journal(paths, result)
+    except OSError:
+        pass
+
+
+def _record(paths: config.Paths, result: RunResult) -> None:
+    """Écrit le rapport puis le journal, chacun protégé contre une panne
+    d'écriture : `run_routine` ne doit jamais lever pour ça. Le rapport est
+    tenté avant le journal pour que l'échec du rapport, s'il y en a un,
+    apparaisse dans la ligne de journal."""
+    try:
+        report.write_report(paths, result)
+    except OSError as e:
+        result.errors.append(f"rapport non écrit : {e}")
+    _write_journal_safe(paths, result)
+
+
 def run_routine(paths: config.Paths, *, client, dry_run: bool = False,
                 now: float | None = None) -> RunResult:
     """Une exécution complète. Ne lève pas : tâche sans surveillance, toute
-    erreur finit dans le rapport et le journal."""
+    erreur finit dans le rapport et le journal. Rapport et journal sont
+    écrits pendant que le verrou est encore tenu, pour qu'une exécution
+    concurrente ne puisse jamais entrelacer ses écritures avec celles du
+    même rapport hebdomadaire."""
     now = time.time() if now is None else now
     result = RunResult(run_id=run_id_of(now), dry_run=dry_run)
     if not acquire_lock(paths.lock_file):
         result.status = "locked"
-        report.append_journal(paths, result)
+        _write_journal_safe(paths, result)
         return result
     try:
-        _run(paths, client, dry_run, now, result)
-    except Exception as e:           # noqa: BLE001 — l'erreur va au rapport
-        result.status = "error"
-        result.errors.append(f"{type(e).__name__} : {e}")
+        try:
+            _run(paths, client, dry_run, now, result)
+        except Exception as e:       # noqa: BLE001 — l'erreur va au rapport
+            result.status = "error"
+            result.errors.append(f"{type(e).__name__} : {e}")
+        _record(paths, result)
     finally:
         release_lock(paths.lock_file)
-    report.write_report(paths, result)
-    report.append_journal(paths, result)
     return result
