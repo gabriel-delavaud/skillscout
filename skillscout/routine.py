@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import profile as profile_mod, sources
 
-LOCK_STALE_S = 6 * 3600      # un verrou plus vieux vient d'une exécution tuée
+_HELD: dict[str, int] = {}          # chemin du verrou -> descripteur qui le tient
+_HELD_GUARD = threading.Lock()
 
 
 @dataclass
@@ -33,37 +35,52 @@ def run_id_of(now: float) -> str:
     return _dt.datetime.fromtimestamp(now, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def acquire_lock(path: Path, now: float | None = None) -> bool:
-    """Crée le verrou de façon exclusive. Un verrou orphelin (plus vieux que
-    LOCK_STALE_S) est repris une fois."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    for _attempt in (1, 2):
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            try:
-                age = (time.time() if now is None else now) - path.stat().st_mtime
-            except OSError:
-                return False
-            if age < LOCK_STALE_S:
-                return False
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                # Contention lors du reprise du verrou orphelin (ex: PermissionError sur Windows)
-                return False
-            continue
-        except OSError:
-            # Toute autre erreur lors de la création du verrou (ex: PermissionError)
-            return False
-        with os.fdopen(fd, "w") as f:
-            f.write(str(os.getpid()))
+def _try_os_lock(fd: int) -> bool:
+    """Verrou exclusif non bloquant tenu par le système d'exploitation."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return True
-    return False
+    except OSError:
+        return False
+
+
+def acquire_lock(path: Path) -> bool:
+    """Verrou exclusif tenu par le système d'exploitation pendant toute
+    l'exécution. Il disparaît avec le processus, même tué : aucun verrou
+    orphelin ne peut bloquer la routine, et le fichier n'est jamais supprimé
+    (le supprimer rouvrirait une course). Ne lève jamais : toute erreur vaut
+    « déjà pris »."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT)
+    except OSError:
+        return False
+    if not _try_os_lock(fd):
+        os.close(fd)
+        return False
+    with _HELD_GUARD:
+        _HELD[str(path)] = fd
+    return True
 
 
 def release_lock(path: Path) -> None:
-    path.unlink(missing_ok=True)
+    with _HELD_GUARD:
+        fd = _HELD.pop(str(path), None)
+    if fd is None:
+        return
+    try:
+        if os.name == "nt":
+            import msvcrt
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass                       # la fermeture ci-dessous libère de toute façon
+    os.close(fd)
 
 
 def discover(prof: profile_mod.Profile) -> tuple[list[dict], list[str]]:

@@ -1,4 +1,4 @@
-import json, os, shutil, sys, tempfile, threading, time, unittest
+import json, os, shutil, subprocess, sys, tempfile, threading, time, unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -57,13 +57,11 @@ class TestVerrou(Base):
         routine.release_lock(lock)
         self.assertTrue(routine.acquire_lock(lock))
         routine.release_lock(lock)
-        self.assertFalse(lock.exists())
 
-    def test_verrou_orphelin_repris(self):
+    def test_verrou_stale_file(self):
         lock = self.paths.lock_file
-        self.assertTrue(routine.acquire_lock(lock))
-        old = time.time() - routine.LOCK_STALE_S - 60
-        os.utime(lock, (old, old))
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("12345", encoding="utf-8")
         self.assertTrue(routine.acquire_lock(lock))
         routine.release_lock(lock)
 
@@ -74,19 +72,18 @@ class TestVerrou(Base):
         with patch("skillscout.routine.os.open", side_effect=PermissionError):
             self.assertFalse(routine.acquire_lock(lock))
 
-    def test_unlink_permissionerror(self):
+    def test_try_os_lock_fails(self):
         lock = self.paths.lock_file
-        self.assertTrue(routine.acquire_lock(lock))
-        old = time.time() - routine.LOCK_STALE_S - 60
-        os.utime(lock, (old, old))
-        with patch.object(type(lock), "unlink", side_effect=PermissionError):
+        close_called = []
+        def mock_close(fd):
+            close_called.append(fd)
+        with patch("skillscout.routine._try_os_lock", return_value=False), \
+             patch("skillscout.routine.os.close", side_effect=mock_close, wraps=os.close):
             self.assertFalse(routine.acquire_lock(lock))
+            self.assertEqual(len(close_called), 1)
 
     def test_verrou_concurrent_threads(self):
         lock = self.paths.lock_file
-        self.assertTrue(routine.acquire_lock(lock))
-        old = time.time() - routine.LOCK_STALE_S - 60
-        os.utime(lock, (old, old))
         results = []
         barrier = threading.Barrier(8)
         def race_acquire():
@@ -103,7 +100,39 @@ class TestVerrou(Base):
         self.assertNotIn("exception", str(results))
         self.assertEqual(results.count(True), 1)
         self.assertEqual(results.count(False), 7)
-        routine.release_lock(lock)
+        for path_str, fd in list(routine._HELD.items()):
+            routine.release_lock(Path(path_str))
+
+    def test_verrou_cross_process(self):
+        lock = self.paths.lock_file
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        self.assertTrue(routine.acquire_lock(lock))
+        root_path = str(self.root)
+        repo_path = str(Path(__file__).resolve().parent.parent)
+        code = f"""
+import sys, os
+from pathlib import Path
+sys.path.insert(0, {repo_path!r})
+from skillscout import config, routine
+root = Path({root_path!r})
+paths = config.Paths.under(root)
+result = routine.acquire_lock(paths.lock_file)
+print("fail" if result else "ok", flush=True)
+sys.stdin.read()
+"""
+        proc = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            import time
+            time.sleep(0.1)
+            line = proc.stdout.readline()
+            self.assertEqual(line.strip(), "ok")
+            routine.release_lock(lock)
+            self.assertTrue(routine.acquire_lock(lock))
+            routine.release_lock(lock)
+        finally:
+            proc.stdin.close()
+            proc.wait(timeout=10)
 
 
 class TestDiscover(Base):
