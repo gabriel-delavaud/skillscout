@@ -47,8 +47,15 @@ def acquire_lock(path: Path, now: float | None = None) -> bool:
                 return False
             if age < LOCK_STALE_S:
                 return False
-            path.unlink(missing_ok=True)
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                # Contention lors du reprise du verrou orphelin (ex: PermissionError sur Windows)
+                return False
             continue
+        except OSError:
+            # Toute autre erreur lors de la création du verrou (ex: PermissionError)
+            return False
         with os.fdopen(fd, "w") as f:
             f.write(str(os.getpid()))
         return True

@@ -74,9 +74,15 @@ def write_report(paths: config.Paths, result) -> Path:
     return path
 
 
+def _now_iso() -> str:
+    """Timestamp actuel en UTC au format ISO 8601."""
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def append_journal(paths: config.Paths, result) -> None:
     paths.cache_dir.mkdir(parents=True, exist_ok=True)
-    entry = {"run_id": result.run_id, "status": result.status, "dry_run": result.dry_run,
+    entry = {"started_at": result.run_id, "finished_at": _now_iso(),
+             "status": result.status, "dry_run": result.dry_run,
              "candidates": result.candidates, "jev_calls": result.jev_calls,
              "installed": [s["skill_id"] for s in result.installed],
              "pending": len(result.pending), "rejected": len(result.rejected),

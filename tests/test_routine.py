@@ -67,6 +67,44 @@ class TestVerrou(Base):
         self.assertTrue(routine.acquire_lock(lock))
         routine.release_lock(lock)
 
+    def test_os_open_permissionerror(self):
+        lock = self.paths.lock_file
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.touch()
+        with patch("skillscout.routine.os.open", side_effect=PermissionError):
+            self.assertFalse(routine.acquire_lock(lock))
+
+    def test_unlink_permissionerror(self):
+        lock = self.paths.lock_file
+        self.assertTrue(routine.acquire_lock(lock))
+        old = time.time() - routine.LOCK_STALE_S - 60
+        os.utime(lock, (old, old))
+        with patch.object(type(lock), "unlink", side_effect=PermissionError):
+            self.assertFalse(routine.acquire_lock(lock))
+
+    def test_verrou_concurrent_threads(self):
+        lock = self.paths.lock_file
+        self.assertTrue(routine.acquire_lock(lock))
+        old = time.time() - routine.LOCK_STALE_S - 60
+        os.utime(lock, (old, old))
+        results = []
+        barrier = threading.Barrier(8)
+        def race_acquire():
+            barrier.wait()
+            try:
+                results.append(routine.acquire_lock(lock))
+            except Exception as e:
+                results.append(f"exception: {type(e).__name__}")
+        threads = [threading.Thread(target=race_acquire) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertNotIn("exception", str(results))
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 7)
+        routine.release_lock(lock)
+
 
 class TestDiscover(Base):
     def test_dedoublonne_trie_et_note_les_pannes(self):
@@ -139,8 +177,12 @@ class TestReport(Base):
         self.assertEqual(len(lines), 2)
         entry = json.loads(lines[0])
         self.assertEqual(entry["installed"], ["tdd"])
-        self.assertEqual(entry["run_id"], "2026-09-28T10:00:00Z")
+        self.assertEqual(entry["started_at"], "2026-09-28T10:00:00Z")
         self.assertEqual(entry["candidates"], 12)
+        self.assertIn("finished_at", entry)
+        import datetime
+        dt = datetime.datetime.strptime(entry["finished_at"], "%Y-%m-%dT%H:%M:%SZ")
+        self.assertIsNotNone(dt)
 
 
 if __name__ == "__main__":
