@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 
@@ -16,6 +17,9 @@ TIMEOUT = 15.0              # Task 0, S2 : latence médiane 0,34 s (5 appels sé
 BREAKER_THRESHOLD = 3       # échecs consécutifs (chacun après une relance)
 BREAKER_COOLDOWN_S = 300.0
 ENV_KEY = "TYPESAFE_API_KEY"
+# ASCII imprimable sans espace : un CR/LF dans l'en-tête fait lever à
+# http.client un ValueError dont le message cite la clé.
+_KEY_SHAPE = re.compile(r"[\x21-\x7e]+")
 
 
 class JevClient:
@@ -37,9 +41,11 @@ class JevClient:
 
     @classmethod
     def from_env(cls, environ=None) -> "JevClient | None":
+        """Client construit sur la clé de l'environnement, ou None si elle est
+        absente ou mal formée (traitée comme absente : Jev n'est pas appelé)."""
         environ = os.environ if environ is None else environ
         key = (environ.get(ENV_KEY) or "").strip()
-        return cls(key) if key else None
+        return cls(key) if _KEY_SHAPE.fullmatch(key) else None
 
     @property
     def available(self) -> bool:
@@ -68,7 +74,7 @@ class JevClient:
                 self.calls += 1
             try:
                 status, payload = net.post_json(ENDPOINT, body, headers, self._timeout)
-            except OSError as e:
+            except Exception as e:           # noqa: BLE001 — IncompleteRead, ValueError…
                 # Le nom de l'exception seulement : son message pourrait
                 # reprendre un en-tête, donc la clé.
                 self._fail(f"Jev injoignable ({type(e).__name__})")

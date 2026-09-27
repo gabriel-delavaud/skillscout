@@ -6,6 +6,7 @@ import datetime as _dt
 import os
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,9 +86,10 @@ def release_lock(path: Path) -> None:
     os.close(fd)
 
 
-def discover(prof: profile_mod.Profile) -> tuple[list[dict], list[str]]:
+def discover(prof: profile_mod.Profile) -> tuple[list[dict], list[str], bool]:
     """Requêtes thématiques (source principale) puis classements (complément).
-    Une source en panne est notée, jamais bloquante."""
+    Une source en panne est notée, jamais bloquante, quelle que soit l'erreur.
+    Renvoie (candidats, pannes, toutes les recherches thématiques en panne)."""
     found: dict[tuple[str, str], dict] = {}
     errors: list[str] = []
 
@@ -95,12 +97,17 @@ def discover(prof: profile_mod.Profile) -> tuple[list[dict], list[str]]:
         key = (c["source"].lower(), c["skill_id"].lower())
         if key not in found or c["installs"] > found[key]["installs"]:
             found[key] = c
-    for theme in prof.meta_themes + prof.stack_themes:
+    themes = prof.meta_themes + prof.stack_themes
+    searched = 0
+    for theme in themes:
         try:
             for c in sources.search_skills(theme, limit=prof.per_query):
                 add(c)
+            searched += 1
         except sources.SearchError as e:
             errors.append(f"recherche « {theme} » : {e}")
+        except Exception as e:          # noqa: BLE001 — une réponse étrange, pas un arrêt
+            errors.append(f"recherche « {theme} » : {type(e).__name__} : {e}")
     if prof.leaderboard_top:
         for kind in sources.LEADERBOARDS:
             try:
@@ -108,7 +115,10 @@ def discover(prof: profile_mod.Profile) -> tuple[list[dict], list[str]]:
                     add(c)
             except sources.LeaderboardError as e:
                 errors.append(f"classement {kind} : {e}")
-    return sorted(found.values(), key=lambda c: -c["installs"]), errors
+            except Exception as e:      # noqa: BLE001
+                errors.append(f"classement {kind} : {type(e).__name__} : {e}")
+    search_down = bool(themes) and searched == 0
+    return sorted(found.values(), key=lambda c: -c["installs"]), errors, search_down
 
 
 def _label(row: dict) -> str:
@@ -130,6 +140,10 @@ def precheck(row: dict, prof: profile_mod.Profile, present: set[str]) -> str | N
         return "le nom déclaré dans SKILL.md diffère de celui de skills.sh"
     if not (row.get("description") or "").strip():
         return "SKILL.md sans description"
+    if row.get("truncated", True):
+        # Même chez un éditeur de confiance : la liste des fichiers est
+        # incomplète, rien ne garantit que le dossier soit du texte pur.
+        return "arborescence tronquée par GitHub"
     if row.get("executables") or row.get("exec_bits_in_scope") or row.get("opaque_in_scope"):
         return "fichier exécutable, lien symbolique ou sous-module"
     if row.get("content_hits"):
@@ -145,6 +159,30 @@ def precheck(row: dict, prof: profile_mod.Profile, present: set[str]) -> str | N
     bad = sorted(p for p in rel if not (install.is_text_file(p) and install.is_safe_relpath(p)))
     if bad:
         return f"fichier hors texte pur : {bad[0]}"
+    return None
+
+
+# Caractères que Claude lit mais qu'un humain ne voit pas (ou voit dans un
+# autre ordre) : balises Unicode, sélecteurs de variante supplémentaires,
+# contrôles de direction. S'y ajoutent toutes les catégories Cf (format),
+# Co (usage privé) et Cn (non attribué). Seuls restent admis le liant sans
+# chasse (U+200D) et le sélecteur de présentation emoji (U+FE0F), qui
+# composent les emoji, et l'indicateur d'ordre des octets en tête de fichier.
+_HIDDEN_RANGES = ((0xE0000, 0xE007F), (0xE0100, 0xE01EF), (0x202A, 0x202E), (0x2066, 0x2069))
+_HIDDEN_CATEGORIES = ("Cf", "Co", "Cn")
+_HIDDEN_ALLOWED = {0x200D, 0xFE0F}
+
+
+def hidden_character(text: str) -> int | None:
+    """Premier caractère invisible ou de contrôle de direction de `text` (son
+    code), ou None."""
+    for i, ch in enumerate(text):
+        cp = ord(ch)
+        if cp < 0x80 or cp in _HIDDEN_ALLOWED or (cp == 0xFEFF and i == 0):
+            continue
+        if (any(lo <= cp <= hi for lo, hi in _HIDDEN_RANGES)
+                or unicodedata.category(ch) in _HIDDEN_CATEGORIES):
+            return cp
     return None
 
 
@@ -164,6 +202,10 @@ def load_files(row: dict, cache: github.Cache) -> str | None:
             texts[r] = data.decode("utf-8")
         except UnicodeDecodeError:
             return f"{r} n'est pas du texte UTF-8"
+        hidden = hidden_character(texts[r])
+        if hidden is not None:
+            return (f"caractères invisibles ou de contrôle de direction dans {r} "
+                    f"(U+{hidden:04X})")
         execs, sensitive = trust.scan_skill_md(texts[r])
         if execs or sensitive:
             return f"motif relevé dans {r} : " + ", ".join(execs + sensitive)
@@ -194,19 +236,52 @@ def _scores(j: verdict.Judgement) -> dict:
 
 def _inspect_all(cands: list[dict], cache: github.Cache, now: float,
                  result: RunResult) -> list[dict]:
+    """Inspection parallèle. Toute erreur, prévue (GhError) ou non, écarte le
+    seul candidat concerné. Si aucune inspection n'aboutit, GitHub est en
+    panne (gh absent, non connecté…) : l'exécution passe en « source_error »."""
     def work(c):
         try:
             return inspection.inspect_candidate(c, cache, now)
         except github.GhError as e:
-            return dict(c, gh_error=str(e))
-    rows = []
+            return dict(c, inspect_error=str(e), inspect_reason=f"GitHub : {e}")
+        except Exception as e:           # noqa: BLE001 — un candidat, pas l'exécution
+            detail = f"{type(e).__name__} : {e}"
+            return dict(c, inspect_error=detail, inspect_reason=f"inspection : {detail}")
+    rows, failures = [], []
     with ThreadPoolExecutor(max_workers=config.WORKERS) as pool:
         for r in pool.map(work, cands):
-            if "gh_error" in r:
-                result.rejected.append((_label(r), f"GitHub : {r['gh_error']}"))
+            if "inspect_error" in r:
+                result.rejected.append((_label(r), r["inspect_reason"]))
+                failures.append(r["inspect_error"])
             else:
                 rows.append(r)
+    if cands and not rows:
+        result.status = "source_error"
+        result.source_errors.append(f"GitHub : aucune inspection n'a abouti ({failures[0]})")
     return rows
+
+
+def _screen(row: dict, prof: profile_mod.Profile, present: set[str],
+            cache: github.Cache) -> str | None:
+    """Critères avant Jev pour une ligne inspectée : raison d'un refus, ou
+    None. Une exception écarte la ligne, jamais l'exécution."""
+    try:
+        return ((row["reason"] if row["excluded"] else None)
+                or precheck(row, prof, present) or load_files(row, cache))
+    except Exception as e:               # noqa: BLE001
+        return f"erreur inattendue ({type(e).__name__} : {e})"
+
+
+def _unique_names(eligible: list[dict], result: RunResult) -> list[dict]:
+    """Un seul skill par nom de dossier : le mieux classé. Les suivants
+    échoueraient à l'installation et prendraient une place du plafond."""
+    kept: dict[str, dict] = {}
+    for row in eligible:
+        first = kept.setdefault(row["skill_id"].lower(), row)
+        if first is not row:
+            result.rejected.append((_label(row), "même nom qu'un skill mieux classé "
+                                                 f"({first['source']})"))
+    return list(kept.values())
 
 
 def _upstream_changed(paths: config.Paths, cache: github.Cache, run_id: str) -> list[str]:
@@ -219,7 +294,7 @@ def _upstream_changed(paths: config.Paths, cache: github.Cache, run_id: str) -> 
         try:
             meta = github.fetch_repo(e["source"], cache)
             snap = github.fetch_tree_snapshot(e["source"], cache, meta.get("pushed_at", ""))
-        except github.GhError:
+        except Exception:                # noqa: BLE001 — simple signalement, jamais bloquant
             continue
         if not snap.get("sha") or snap["sha"] == e["tree_sha"]:
             continue
@@ -250,7 +325,12 @@ def _run(paths: config.Paths, client, dry_run: bool, now: float, result: RunResu
         result.errors.append(str(e))
         return
 
-    cands, result.source_errors = discover(prof)
+    cands, result.source_errors, search_down = discover(prof)
+    if search_down and not cands:
+        result.status = "source_error"
+        result.source_errors.append("skills.sh : aucune recherche n'a abouti "
+                                    f"({result.source_errors[0]})")
+        return
     cands = [c for c in cands if sources.is_github_source(c["source"])
              and c["skill_id"].lower() not in present][:prof.max_candidates]
     result.candidates = len(cands)
@@ -258,9 +338,11 @@ def _run(paths: config.Paths, client, dry_run: bool, now: float, result: RunResu
     cache = github.Cache(str(paths.cache_db))
 
     survivors = []
-    for row in _inspect_all(cands, cache, now, result):
-        reason = ((row["reason"] if row["excluded"] else None)
-                  or precheck(row, prof, present) or load_files(row, cache))
+    inspected = _inspect_all(cands, cache, now, result)
+    if result.status == "source_error":
+        return
+    for row in inspected:
+        reason = _screen(row, prof, present, cache)
         if reason:
             result.rejected.append((_label(row), reason))
         else:
@@ -269,6 +351,12 @@ def _run(paths: config.Paths, client, dry_run: bool, now: float, result: RunResu
     verdict.judge_rows(survivors, client, "install", profile=prof.jev_text(), cache=cache,
                        text_of=lambda r: r["install_text"])
     result.jev_calls = client.calls
+    if client.key_rejected:
+        # Clé refusée en cours de route : même les jugements « ok » tirés du
+        # cache n'installent rien (D4, fermeture en échec).
+        result.status = "jev_unavailable"
+        result.jev_status = client.last_error or "clé TYPESAFE_API_KEY refusée"
+        return
     if not client.available:
         result.jev_status = client.last_error or "Jev indisponible"
 
@@ -280,6 +368,7 @@ def _run(paths: config.Paths, client, dry_run: bool, now: float, result: RunResu
         else:
             eligible.append(row)
     eligible.sort(key=_priority)
+    eligible = _unique_names(eligible, result)
     result.pending = [_summary(r) for r in eligible[prof.max_installs:]]
     for row in eligible[:prof.max_installs]:
         target = paths.skills_dir / row["skill_id"]

@@ -33,19 +33,28 @@ def search_skills(query: str, limit: int = 25) -> list[dict]:
         data = net.get_json(SEARCH_URL.format(quote(query)))
     except (OSError, ValueError) as e:  # URLError ⊂ OSError ; JSON invalide ⊂ ValueError
         raise SearchError(f"skills.sh injoignable ou illisible : {e}") from e
-    out = [
-        {
-            "skill_id": s.get("skillId") or s.get("name") or "",
-            "name": s.get("name") or "",
-            "source": s.get("source") or "",
-            "installs": int(s.get("installs") or 0),
-            "relevance_rank": rank,
-        }
-        for rank, s in enumerate(data.get("skills", []))
-        if s.get("source")
-    ]
+    items = data.get("skills", []) if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        raise SearchError("skills.sh a renvoyé une réponse d'une forme inattendue")
+    out = [c for c in (_candidate(s, rank) for rank, s in enumerate(items)) if c]
     out.sort(key=lambda s: s["installs"], reverse=True)
     return out[:limit]
+
+
+def _candidate(s, rank: int) -> dict | None:
+    """Un résultat de skills.sh en candidat, ou None s'il est mal formé :
+    `source` et l'identifiant (`skillId`, sinon `name`) doivent être du texte
+    non vide. Une entrée étrange est ignorée, jamais fatale pour les autres."""
+    if not isinstance(s, dict):
+        return None
+    source = s.get("source")
+    sid = s.get("skillId") or s.get("name")
+    if not (isinstance(source, str) and source and isinstance(sid, str) and sid):
+        return None
+    name = s.get("name")
+    return {"skill_id": sid, "name": name if isinstance(name, str) else "",
+            "source": source, "installs": _as_int(s.get("installs")),
+            "relevance_rank": rank}
 
 
 def is_github_source(source: str) -> bool:
@@ -69,7 +78,7 @@ class LeaderboardError(Exception):
 def _as_int(value) -> int:
     try:
         return int(value or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):   # "1.2k", None, [], Infinity
         return 0
 
 
@@ -88,15 +97,7 @@ def parse_initial_skills(html: str) -> list[dict]:
         raise LeaderboardError("liste initialSkills illisible") from e
     if not isinstance(items, list):
         raise LeaderboardError("initialSkills n'est pas une liste")
-    return [
-        {"skill_id": s.get("skillId") or s.get("name") or "",
-         "name": s.get("name") or "",
-         "source": s["source"],
-         "installs": _as_int(s.get("installs")),
-         "relevance_rank": rank}
-        for rank, s in enumerate(items)
-        if isinstance(s, dict) and s.get("source")
-    ]
+    return [c for c in (_candidate(s, rank) for rank, s in enumerate(items)) if c]
 
 
 def fetch_leaderboard(kind: str, top: int = 50) -> list[dict]:

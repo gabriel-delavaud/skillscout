@@ -42,7 +42,19 @@ class TestDispatch(Base):
         fe.assert_called_once()
         self.assertEqual(rr.call_args.args, (self.paths,))
         self.assertEqual(rr.call_args.kwargs, {"client": "client", "dry_run": True})
+        # Revue finale M2 : une simulation n'annonce pas d'installation.
+        self.assertIn("Simulation : 1 à installer, 1 en attente, 3 écarté(s)", out)
+        self.assertNotIn("installé(s)", out)
+
+    def test_routine_reelle_annonce_les_installations(self):
+        res = routine.RunResult(run_id=NOW, installed=[{"skill_id": "a"}],
+                                pending=[{}], rejected=[("x", "y")] * 3)
+        with patch("skillscout.jev.JevClient.from_env", return_value="client"), \
+             patch("skillscout.routine.run_routine", return_value=res):
+            code, out, _ = self.main(["routine"])
+        self.assertEqual(code, 0)
         self.assertIn("1 installé(s), 1 en attente, 3 écarté(s)", out)
+        self.assertNotIn("Simulation", out)
 
     def test_routine_code_de_sortie_si_echec(self):
         res = routine.RunResult(run_id=NOW, status="jev_unavailable")
@@ -51,6 +63,12 @@ class TestDispatch(Base):
             code, out, _ = self.main(["routine"])
         self.assertEqual(code, 1)
         self.assertIn("Jev indisponible", out)
+        res = routine.RunResult(run_id=NOW, status="source_error")
+        with patch("skillscout.jev.JevClient.from_env", return_value=None), \
+             patch("skillscout.routine.run_routine", return_value=res):
+            code, out, _ = self.main(["routine"])
+        self.assertEqual(code, 1)
+        self.assertIn("injoignable", out)
 
     def test_register_et_unregister(self):
         with patch("skillscout.schedule.register", return_value=0) as reg, \

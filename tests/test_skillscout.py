@@ -1232,6 +1232,14 @@ class TestInspectionCandidat(unittest.TestCase):
         row = self._inspect(snap, gh_json={"return_value": self._blob(texte)})
         self.assertFalse(row["excluded"])
         self.assertEqual(row["body"], texte)
+        self.assertIs(row["truncated"], False)
+
+    def test_troncature_portee_par_la_ligne(self):
+        # Revue finale M3 : la routine en a besoin même pour un éditeur de
+        # confiance, que `evaluate` n'exclut pas pour ça. Absente : tronquée.
+        snap = {"sha": "t" * 40, "paths": ["SKILL.md"], "blobs": {"SKILL.md": "4" * 40}}
+        row = self._inspect(snap, gh_json={"return_value": self._blob("# a\n")})
+        self.assertIs(row["truncated"], True)
 
 
     def test_un_blob_en_cache_plus_court_n_est_pas_resservi(self):

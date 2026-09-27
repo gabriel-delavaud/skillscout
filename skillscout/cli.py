@@ -170,9 +170,12 @@ def _main_routine(argv: list[str]) -> int:
         return schedule.unregister()
     paths = config.default_paths()
     res = routine.run_routine(paths, client=jev.JevClient.from_env(), dry_run=args.dry_run)
-    print(f"Routine {report.STATUS_LABELS.get(res.status, res.status)} : "
-          f"{len(res.installed)} installé(s), {len(res.pending)} en attente, "
-          f"{len(res.rejected)} écarté(s).")
+    label = report.STATUS_LABELS.get(res.status, res.status)
+    rest = f"{len(res.pending)} en attente, {len(res.rejected)} écarté(s)"
+    if args.dry_run:                  # rien n'a été écrit : ne pas annoncer d'installation
+        print(f"Simulation : {len(res.installed)} à installer, {rest} (routine {label}).")
+    else:
+        print(f"Routine {label} : {len(res.installed)} installé(s), {rest}.")
     report_path = paths.reports_dir / f"{report.iso_week_name(res.run_id)}.md"
     if report_path.exists():
         print(f"Rapport : {report_path}")

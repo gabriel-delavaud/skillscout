@@ -125,5 +125,8 @@ def inspect_candidate(cand: dict, cache: github.Cache, now: float) -> dict:
     row["skill_md_path"] = md_path
     row["skill_md_sha"] = md_sha
     row["tree_sha"] = snap.get("sha", "")
+    # `evaluate` n'exclut pas un éditeur de confiance pour une arborescence
+    # tronquée ; la routine, elle, en a besoin (liste de fichiers incomplète).
+    row["truncated"] = truncated
     row["default_branch"] = repo_meta.get("default_branch", "main")
     return row

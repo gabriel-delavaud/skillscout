@@ -201,10 +201,14 @@ def relevance_line(j: Judgement, mode: str) -> str:
 JEV_CACHE_TTL = 30 * 86400
 
 
-def _cache_key(row: dict, mode: str, profile: str | None) -> str:
+def _cache_key(row: dict, mode: str, profile: str | None, text: str) -> str:
+    """`text` est le texte normalisé réellement envoyé à Jev : un « ok » en
+    cache ne couvre ainsi que ce texte-là, octet pour octet, et non tout ce
+    qu'on pourrait associer plus tard à la même empreinte d'arborescence."""
     prof = hashlib.sha1((profile or "").encode()).hexdigest()[:12]
+    judged = hashlib.sha1(text.encode("utf-8", "surrogatepass")).hexdigest()[:16]
     return (f"{row['source']}:{row['skill_id']}@{row['tree_sha']}:{mode}:"
-            f"q{QUESTIONS_VERSION}:{jev.MODEL}:{prof}")
+            f"q{QUESTIONS_VERSION}:{jev.MODEL}:{prof}:{judged}")
 
 
 def judge_one(row: dict, client, mode: str, *, need: str | None, profile: str | None,
@@ -220,7 +224,7 @@ def judge_one(row: dict, client, mode: str, *, need: str | None, profile: str | 
         return unjudged("texte trop long pour Jev")
     cacheable = cache is not None and bool(row.get("tree_sha"))
     if cacheable:
-        hit = cache.get(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile),
+        hit = cache.get(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile, normalized),
                         JEV_CACHE_TTL)
         if hit is not None:
             return parse_answers(hit["answers"], mode)
@@ -233,7 +237,7 @@ def judge_one(row: dict, client, mode: str, *, need: str | None, profile: str | 
         return unjudged(client.last_error or "Jev indisponible")
     judgement = parse_answers(answers, mode)
     if judgement.status == "ok" and cacheable:
-        cache.put(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile),
+        cache.put(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile, normalized),
                   {"answers": answers})
     return judgement
 
@@ -242,13 +246,18 @@ def judge_rows(rows: list[dict], client, mode: str, *, need: str | None = None,
                profile: str | None = None, cache=None, text_of=None,
                workers: int = JEV_WORKERS) -> None:
     """Pose `row["jev"]` sur chaque ligne non exclue. Jev n'ajoute que des
-    exclusions (D3) : une ligne déjà exclue n'est ni jugée ni réintégrée."""
+    exclusions (D3) : une ligne déjà exclue n'est ni jugée ni réintégrée.
+    Une exception sur une ligne la rend « non jugée » (nom de l'exception
+    seulement) sans arrêter les autres."""
     text_of = text_of or (lambda r: r.get("body"))
     todo = [r for r in rows if not r.get("excluded")]
 
     def work(r):
-        return judge_one(r, client, mode, need=need, profile=profile, cache=cache,
-                         text=text_of(r))
+        try:
+            return judge_one(r, client, mode, need=need, profile=profile, cache=cache,
+                             text=text_of(r))
+        except Exception as e:       # noqa: BLE001 — une ligne ne bloque pas les autres
+            return unjudged(type(e).__name__)
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for r, judgement in zip(todo, pool.map(work, todo)):
             r["jev"] = judgement

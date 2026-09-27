@@ -148,6 +148,27 @@ class TestJevClient(unittest.TestCase):
         self.assertIsNone(jev.JevClient.from_env({jev.ENV_KEY: "  "}))
         self.assertIsInstance(jev.JevClient.from_env({jev.ENV_KEY: KEY}), jev.JevClient)
 
+    # -- Revue finale I3 et I2 (f) --
+
+    def test_from_env_refuse_une_cle_mal_formee(self):
+        # Un CR/LF dans l'en-tête fait lever à http.client un ValueError qui
+        # cite la clé : une telle clé n'est jamais utilisée.
+        for bad in (KEY + "\nx", "ab\rcd", "ab cd", "clé-" + KEY, "ab\x00cd", "ab\tcd"):
+            self.assertIsNone(jev.JevClient.from_env({jev.ENV_KEY: bad}), repr(bad))
+        client = jev.JevClient.from_env({jev.ENV_KEY: "  " + KEY + "\r\n"})
+        self.assertIsInstance(client, jev.JevClient)            # espaces autour : retirés
+
+    def test_toute_exception_du_transport_est_une_panne_sans_la_cle(self):
+        import http.client
+        for exc in (ValueError(f"Invalid header value b'Bearer {KEY}\\n'"),
+                    http.client.IncompleteRead(KEY.encode()), RuntimeError(KEY)):
+            client = jev.JevClient(KEY, now=self.clock)
+            with patch("skillscout.net.post_json", side_effect=exc) as p:
+                self.assertIsNone(client.classify({}, {}))
+            self.assertEqual(p.call_count, 2, type(exc).__name__)
+            self.assertEqual(client.last_error, f"Jev injoignable ({type(exc).__name__})")
+            self.assertNotIn(KEY, client.last_error)
+
 
 if __name__ == "__main__":
     unittest.main()

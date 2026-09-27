@@ -14,6 +14,7 @@ STATUS_LABELS = {
     "jev_unavailable": "arrêtée : Jev indisponible, rien n'a été installé",
     "profile_error": "arrêtée : profile.toml invalide",
     "install_error": "arrêtée : manifeste de skillscout illisible",
+    "source_error": "arrêtée : GitHub ou skills.sh injoignable, rien n'a été installé",
     "error": "interrompue par une erreur inattendue",
 }
 

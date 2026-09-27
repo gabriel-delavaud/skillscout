@@ -100,6 +100,36 @@ class TestJudge(unittest.TestCase):
         v.judge_rows([r], fake, "install", profile="autre profil", cache=cache, workers=1)
         self.assertEqual(len(fake.states), 3)          # profil modifié : nouveau jugement
 
+    def test_cache_lie_au_texte_effectivement_juge(self):
+        # Revue finale M1 : même tree_sha, texte différent → nouveau jugement.
+        cache = github.Cache(os.path.join(tempfile.mkdtemp(), "c.db"))
+        fake = FakeJev({"d-a": answers(meta=3.0, stack=2.0)})
+        v.judge_rows([row("a")], fake, "install", profile="p", cache=cache, workers=1)
+        autre = row("a", body="---\nname: a\ndescription: d-a\n---\n# a\nAutre texte.\n")
+        v.judge_rows([autre], fake, "install", profile="p", cache=cache, workers=1)
+        self.assertEqual(len(fake.states), 2)
+        self.assertEqual(autre["jev"].status, "ok")
+        v.judge_rows([row("a")], fake, "install", profile="p", cache=cache, workers=1)
+        self.assertEqual(len(fake.states), 2)          # texte d'origine : toujours en cache
+
+    def test_une_ligne_qui_plante_n_arrete_pas_les_autres(self):
+        # Revue finale I2 (g) : l'exception devient « non jugé (<type>) ».
+        class Boom(FakeJev):
+            def classify(self, state, questions):
+                if state["description"] == "d-b":
+                    raise RuntimeError("bogue")
+                return super().classify(state, questions)
+        rows = [row("a"), row("b")]
+        v.judge_rows(rows, Boom({"d-a": answers()}), "manual", need="x", workers=2)
+        self.assertEqual(rows[0]["jev"].status, "ok")
+        self.assertEqual((rows[1]["jev"].status, rows[1]["jev"].note), ("unjudged", "RuntimeError"))
+        rows = [row("a"), row("b")]
+        v.judge_rows(rows, FakeJev({"d-a": answers(), "d-b": answers()}), "manual", need="x",
+                     text_of=lambda r: r["body"] if r["skill_id"] == "a" else r["absent"],
+                     workers=1)
+        self.assertEqual(rows[0]["jev"].status, "ok")
+        self.assertEqual(rows[1]["jev"].note, "KeyError")
+
 
 class TestRankWithJev(unittest.TestCase):
     def test_ordre(self):
