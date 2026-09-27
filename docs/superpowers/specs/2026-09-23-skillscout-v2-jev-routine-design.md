@@ -412,6 +412,15 @@ Tous sans réseau, sauf le banc.
 - Questions Jev en version 2 (voir § Questions, « Version 2 des questions »).
 - Gravité d'installation ≥ 2 : décision utilisateur après calibration (voir § Tests, point 7, « Décision utilisateur — seuil de gravité relevé à 2 »).
 - Constantes mesurées : limite de texte Jev 102 000 caractères, délai 15 s, 4 appels en parallèle (voir § Spikes en tête de plan, S1 et S2).
+- Revue finale (2026-09-27), C1 : la tâche démarre dans le dossier qui contient le paquet importé (`-WorkingDirectory`), et `--register` relance d'abord l'interpréteur depuis ce dossier pour vérifier version et fichier de skillscout ; en cas d'écart (par exemple une 0.2.0 en `site-packages/skillscout.py`), il refuse et indique `py -3.14 -m pip install --upgrade .`.
+- Revue finale, I4 : le README fait saisir la clé TypeSafe par `Read-Host -AsSecureString`, pour qu'elle ne reste pas dans l'historique de PowerShell.
+- Revue finale, I8 : le manifeste est validé entrée par entrée (nom sûr, champs texte, chemins sûrs), les noms et chemins sont filtrés par `fullmatch`, et `uninstall` refuse toute cible dont le parent résolu n'est pas `~/.claude/skills`.
+- Revue finale, I9 : les renommages d'installation et de désinstallation sont relancés jusqu'à 5 fois sur `PermissionError` (0,05 s × 2ⁿ), jamais sur `FileExistsError`.
+- Revue finale, I1 : un fichier contenant des caractères invisibles ou de contrôle de direction (balises, sélecteurs de variante supplémentaires, contrôles bidi, catégories Cf, Co, Cn ; seuls U+200D, U+FE0F et un BOM en tête sont admis) n'est jamais installé.
+- Revue finale, I2 et I3 : une entrée mal formée (source ou identifiant non textuel, `installs` illisible) est ignorée ; toute exception sur un thème, un classement, une inspection, un critère, une lecture ou un jugement ne touche que l'élément concerné ; le client Jev intercepte toute exception de transport et n'en garde que le nom, et n'accepte qu'une clé en ASCII imprimable sans espace.
+- Revue finale, I5 et I6 : nouveau statut `source_error` quand aucune inspection GitHub ou aucune recherche skills.sh n'aboutit ; une clé refusée en cours d'exécution met l'exécution en `jev_unavailable` sans rien installer, même d'après le cache (D4).
+- Revue finale, I7 : un seul candidat par nom de dossier, le mieux classé ; les homonymes d'autres dépôts sont écartés avant le plafond.
+- Revue finale, M1 à M3 : la clé du cache Jev inclut l'empreinte du texte réellement jugé ; la simulation s'annonce « Simulation : N à installer » ; la routine refuse une arborescence tronquée même chez un éditeur en liste blanche.
 
 ## Limites connues
 

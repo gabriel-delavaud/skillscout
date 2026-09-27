@@ -257,7 +257,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **311 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
+- **349 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
 - Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 
