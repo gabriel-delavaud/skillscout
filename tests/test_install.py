@@ -44,6 +44,12 @@ class TestNoms(unittest.TestCase):
         for bad in ("../x.md", "/x.md", "a\\b.md", "C:x.md", "aux.md", "a/./b.md", "a//b.md", ""):
             self.assertFalse(install.is_safe_relpath(bad), bad)
 
+    def test_retour_a_la_ligne_final_refuse(self):
+        # Revue finale I8 : `re.match` avec `$` acceptait un "\n" final.
+        self.assertFalse(install.is_safe_name("tdd\n"))
+        self.assertFalse(install.is_safe_relpath("sub\n/x.md"))
+        self.assertFalse(install.is_safe_relpath("x.md\n"))
+
     def test_fichiers_texte(self):
         for ok in ("SKILL.md", "refs/a.TXT", "LICENSE", "notice"):
             self.assertTrue(install.is_text_file(ok), ok)
@@ -240,6 +246,131 @@ class TestUninstall(Base):
         self.assertEqual(len(errors), 1)
         self.assertTrue(mauvais.exists())
         self.assertEqual([e["name"] for e in install.installed(self.paths)], ["mauvais"])
+
+
+def entry(name="tdd", **over):
+    e = {"name": name, "source": "o/r", "skill_id": name, "tree_sha": "t" * 40,
+         "files": {"SKILL.md": "1" * 40}, "installed_at": NOW, "run_id": "r1", "scores": {}}
+    e.update(over)
+    return e
+
+
+class TestManifesteValide(Base):
+    """Revue finale I8 : une entrée de manifeste n'est jamais crue sur parole."""
+
+    def write_manifest(self, skills):
+        self.paths.config_dir.mkdir(parents=True, exist_ok=True)
+        self.paths.manifest.write_text(json.dumps({"version": 1, "skills": skills}),
+                                       encoding="utf-8")
+
+    def victim(self):
+        victim = self.paths.claude_dir / "victim"
+        victim.mkdir()
+        (victim / "SKILL.md").write_bytes(b"# precieux\n")
+        return victim, entry("../victim", skill_id="victim",
+                             files={"SKILL.md": github.git_blob_sha(b"# precieux\n")})
+
+    def test_entree_forgee_hors_de_skills_refusee_victime_intacte(self):
+        victim, forged = self.victim()
+        self.write_manifest([forged])
+        with self.assertRaises(install.InstallError) as ctx:
+            install.uninstall("../victim", self.paths)
+        self.assertIn("manifeste invalide", str(ctx.exception))
+        self.assertEqual((victim / "SKILL.md").read_bytes(), b"# precieux\n")
+
+    def test_cible_hors_de_skills_refusee_meme_si_le_manifeste_passait(self):
+        victim, forged = self.victim()
+        with patch("skillscout.install.read_manifest",
+                   return_value={"version": 1, "skills": [forged]}):
+            with self.assertRaises(install.InstallError):
+                install.uninstall("../victim", self.paths)
+        self.assertEqual((victim / "SKILL.md").read_bytes(), b"# precieux\n")
+
+    def test_entrees_mal_formees(self):
+        cas = ["pas un objet", {"source": "o/r"}, entry(name="tdd\n"), entry(name=3),
+               entry(files=["SKILL.md"]), entry(files={"../x.md": "1" * 40}),
+               entry(files={"SKILL.md": 5}), entry(tree_sha=None), entry(run_id=3),
+               entry(installed_at=None), entry(source=["o/r"]), entry(skill_id=None),
+               entry(scores=[])]
+        for bad in cas:
+            self.write_manifest([bad])
+            for call in (install.installed, install.present_names,
+                         lambda p: install.uninstall("tdd", p)):
+                with self.assertRaises(install.InstallError, msg=repr(bad)) as ctx:
+                    call(self.paths)
+                self.assertIn("manifeste invalide", str(ctx.exception), repr(bad))
+
+    def test_entree_valide_acceptee(self):
+        self.write_manifest([entry()])
+        self.assertEqual([e["name"] for e in install.installed(self.paths)], ["tdd"])
+
+
+class TestRenommageRelance(Base):
+    """Revue finale I9 : refus d'accès passager de Windows (WinError 5) sur
+    le renommage, dû à un antivirus ou à l'indexeur qui tient un fichier."""
+
+    @staticmethod
+    def flaky(fails):
+        real, calls = os.rename, []
+
+        def rename(src, dst):
+            calls.append((src, dst))
+            if len(calls) <= fails:
+                raise PermissionError(13, "Accès refusé")
+            return real(src, dst)
+        return rename, calls
+
+    def test_installation_relancee_apres_un_refus_passager(self):
+        rename, calls = self.flaky(1)
+        with patch("skillscout.install.os.rename", side_effect=rename), \
+             patch("skillscout.install.time.sleep") as sleep:
+            target = self.install()
+        self.assertEqual((target / "SKILL.md").read_bytes(), b"# tdd\n")
+        self.assertEqual(len(calls), 2)
+        sleep.assert_called_once_with(0.05)
+        self.assertEqual([e["name"] for e in install.installed(self.paths)], ["tdd"])
+
+    def test_installation_abandonnee_apres_cinq_refus(self):
+        with patch("skillscout.install.os.rename",
+                   side_effect=PermissionError(13, "Accès refusé")) as ren, \
+             patch("skillscout.install.time.sleep") as sleep:
+            with self.assertRaises(install.InstallError):
+                self.install()
+        self.assertEqual(ren.call_count, 5)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [0.05, 0.1, 0.2, 0.4])
+        self.assertFalse((self.paths.skills_dir / "tdd").exists())
+        self.assertEqual(install.installed(self.paths), [])
+        self.assertEqual(list(self.paths.staging_dir.iterdir()), [])
+
+    def test_cible_existante_jamais_relancee(self):
+        with patch("skillscout.install.os.rename",
+                   side_effect=FileExistsError(17, "existe")) as ren, \
+             patch("skillscout.install.time.sleep") as sleep:
+            with self.assertRaises(install.InstallError):
+                self.install()
+        self.assertEqual(ren.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_desinstallation_relancee_apres_un_refus_passager(self):
+        target = self.install()
+        rename, calls = self.flaky(1)
+        with patch("skillscout.install.os.rename", side_effect=rename), \
+             patch("skillscout.install.time.sleep"):
+            install.uninstall("tdd", self.paths)
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(target.exists())
+        self.assertEqual(install.installed(self.paths), [])
+
+    def test_desinstallation_abandonnee_apres_cinq_refus(self):
+        target = self.install()
+        with patch("skillscout.install.os.rename",
+                   side_effect=PermissionError(13, "Accès refusé")) as ren, \
+             patch("skillscout.install.time.sleep"):
+            with self.assertRaises(install.InstallError):
+                install.uninstall("tdd", self.paths)
+        self.assertEqual(ren.call_count, 5)
+        self.assertEqual((target / "SKILL.md").read_bytes(), b"# tdd\n")
+        self.assertEqual([e["name"] for e in install.installed(self.paths)], ["tdd"])
 
 
 if __name__ == "__main__":

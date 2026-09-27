@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import stat
+import time
 from pathlib import Path
 
 from . import config, github
@@ -17,9 +18,11 @@ MAX_FILES = 50
 MAX_TOTAL_BYTES = 1_000_000
 TEXT_SUFFIXES = (".md", ".txt")
 TEXT_BASENAMES = ("license", "notice")
+RENAME_ATTEMPTS = 5
 
-_SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+# Toujours avec `fullmatch` : `re.match` et `$` acceptent un "\n" final.
+_SAFE_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+_SAFE_SEGMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 _WINDOWS_RESERVED = {"con", "prn", "aux", "nul",
                      *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
 
@@ -35,12 +38,12 @@ def _reserved(segment: str) -> bool:
 def is_safe_name(name: str) -> bool:
     """Nom de dossier sous ~/.claude/skills. `skill_id` vient de skills.sh,
     pas de nous : rien n'est écrit sans passer ce filtre."""
-    return bool(_SAFE_NAME.match(name)) and not _reserved(name)
+    return bool(_SAFE_NAME.fullmatch(name)) and not _reserved(name)
 
 
 def is_safe_relpath(rel: str) -> bool:
     parts = rel.split("/")
-    return bool(rel) and all(_SAFE_SEGMENT.match(s) and not _reserved(s) for s in parts)
+    return bool(rel) and all(_SAFE_SEGMENT.fullmatch(s) and not _reserved(s) for s in parts)
 
 
 def is_text_file(rel: str) -> bool:
@@ -65,8 +68,38 @@ def read_manifest(paths: config.Paths) -> dict:
     except (OSError, ValueError) as e:
         raise InstallError(f"manifeste illisible ({paths.manifest}) : {e}") from e
     if not isinstance(data, dict) or not isinstance(data.get("skills"), list):
-        raise InstallError(f"manifeste invalide ({paths.manifest})")
+        raise InstallError(f"manifeste invalide : ni objet ni liste « skills » "
+                           f"({paths.manifest})")
+    for e in data["skills"]:
+        problem = _entry_problem(e)
+        if problem:
+            raise InstallError(f"manifeste invalide : {problem} ({paths.manifest})")
     return data
+
+
+_ENTRY_TEXT_FIELDS = ("source", "skill_id", "tree_sha", "installed_at", "run_id")
+
+
+def _entry_problem(e) -> str | None:
+    """Ce qui ne va pas dans une entrée du manifeste, ou None. Le manifeste
+    commande des suppressions : un nom forgé (`../victim`) viserait un dossier
+    hors de skills_dir, un champ manquant ferait planter la routine."""
+    if not isinstance(e, dict):
+        return "entrée qui n'est pas un objet"
+    name = e.get("name")
+    if not isinstance(name, str) or not is_safe_name(name):
+        return f"nom refusé {name!r}"
+    for key in _ENTRY_TEXT_FIELDS:
+        if not isinstance(e.get(key), str):
+            return f"{name} : champ « {key} » absent ou invalide"
+    files = e.get("files")
+    if not isinstance(files, dict) or not all(
+            isinstance(rel, str) and is_safe_relpath(rel) and isinstance(sha, str)
+            for rel, sha in files.items()):
+        return f"{name} : liste de fichiers invalide"
+    if not isinstance(e.get("scores"), dict):
+        return f"{name} : champ « scores » absent ou invalide"
+    return None
 
 
 def installed(paths: config.Paths) -> list[dict]:
@@ -78,6 +111,24 @@ def _write_manifest(paths: config.Paths, data: dict) -> None:
     tmp = paths.manifest.with_name(paths.manifest.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, paths.manifest)
+
+
+def _rename_retry(src: Path, dst: Path) -> None:
+    """`os.rename`, relancé sur PermissionError seulement : sous Windows, un
+    antivirus ou l'indexeur qui tient un instant un fichier du dossier fait
+    échouer le renommage (WinError 5). Jamais sur FileExistsError : une cible
+    déjà présente reste un refus. Lève la dernière erreur après
+    RENAME_ATTEMPTS essais."""
+    for attempt in range(RENAME_ATTEMPTS):
+        try:
+            os.rename(src, dst)
+            return
+        except FileExistsError:
+            raise
+        except PermissionError:
+            if attempt == RENAME_ATTEMPTS - 1:
+                raise
+            time.sleep(0.05 * 2 ** attempt)
 
 
 def present_names(paths: config.Paths) -> set[str]:
@@ -163,7 +214,7 @@ def install_skill(row: dict, files: dict[str, bytes], expected: dict[str, str],
             if github.git_blob_sha(stage.joinpath(*rel.split("/")).read_bytes()) != sha:
                 raise InstallError(f"{name} : relecture différente pour {rel}")
         paths.skills_dir.mkdir(parents=True, exist_ok=True)
-        os.rename(stage, target)                   # échoue si la cible existe
+        _rename_retry(stage, target)               # échoue si la cible existe
     except InstallError:
         shutil.rmtree(stage, ignore_errors=True)
         raise
@@ -226,6 +277,15 @@ def uninstall(name: str, paths: config.Paths) -> Path:
     if entry is None:
         raise InstallError(f"{name} n'a pas été installé par skillscout : rien n'est supprimé")
     target = paths.skills_dir / entry["name"]
+    # Le manifeste valide déjà les noms ; ceci garantit en plus que rien hors
+    # de skills_dir n'est jamais retiré, même par un chemin qui y aboutirait.
+    try:
+        inside = target.resolve().parent == paths.skills_dir.resolve()
+    except (OSError, RuntimeError):
+        inside = False
+    if not inside:
+        raise InstallError(f"{target} n'est pas directement dans {paths.skills_dir} : "
+                           "désinstallation refusée")
     moved = None
     if target.exists() or target.is_symlink():
         try:
@@ -239,7 +299,7 @@ def uninstall(name: str, paths: config.Paths) -> Path:
         moved = paths.staging_dir / f"{entry['name']}-removed-{os.getpid()}"
         shutil.rmtree(moved, ignore_errors=True)
         try:
-            os.rename(target, moved)                # même volume : atomique, ou échoue net
+            _rename_retry(target, moved)            # même volume : atomique, ou échoue net
         except OSError as e:
             raise InstallError(f"{target} : retrait impossible ({e})") from e
     data["skills"] = [e for e in data["skills"] if e is not entry]
@@ -248,7 +308,7 @@ def uninstall(name: str, paths: config.Paths) -> Path:
     except OSError as e:
         if moved is not None:
             try:                                     # on remet le dossier en place : le
-                os.rename(moved, target)              # manifeste au repos le dit encore installé
+                _rename_retry(moved, target)          # manifeste au repos le dit encore installé
             except OSError:
                 pass
         raise InstallError(f"{target} : manifeste non mis à jour, désinstallation annulée "
