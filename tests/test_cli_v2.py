@@ -115,11 +115,19 @@ class TestUninstallCli(Base):
         self.assertIn("o/r@aaaaaaa", out)
 
 
+def preflight(version=None, file=None, code=0, stderr=""):
+    """Sortie simulée de la vérification préalable (jamais lancée pour de vrai)."""
+    import skillscout
+    out = "" if code else f"{version or skillscout.__version__}\n{file or skillscout.__file__}\n"
+    return subprocess.CompletedProcess([], code, stdout=out, stderr=stderr)
+
+
 class TestSchedule(unittest.TestCase):
     def test_script_register(self):
-        s = schedule.register_script(r"C:\it's\pythonw.exe")
+        s = schedule.register_script(r"C:\it's\pythonw.exe", Path(r"C:\l'app\site-packages"))
         self.assertIn(r"-Execute 'C:\it''s\pythonw.exe'", s)
         self.assertIn("-Argument '-m skillscout routine'", s)
+        self.assertIn(r"-WorkingDirectory 'C:\l''app\site-packages'", s)
         self.assertIn("-Weekly -DaysOfWeek Monday -At 10:00", s)
         self.assertIn("-StartWhenAvailable", s)
         self.assertIn("-MultipleInstances IgnoreNew", s)
@@ -135,15 +143,91 @@ class TestSchedule(unittest.TestCase):
     def test_register_succes_et_echec(self):
         ok = subprocess.CompletedProcess([], 0, stdout="", stderr="")
         ko = subprocess.CompletedProcess([], 1, stdout="", stderr="Accès refusé")
-        with patch("skillscout.schedule._powershell", return_value=ok) as ps, \
+        with patch("skillscout.schedule._preflight", return_value=preflight()), \
+             patch("skillscout.schedule._powershell", return_value=ok) as ps, \
              contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(schedule.register(is_windows=True), 0)
         self.assertIn(schedule.TASK_NAME, ps.call_args.args[0])
         err = io.StringIO()
-        with patch("skillscout.schedule._powershell", return_value=ko), \
+        with patch("skillscout.schedule._preflight", return_value=preflight()), \
+             patch("skillscout.schedule._powershell", return_value=ko), \
              contextlib.redirect_stderr(err):
             self.assertEqual(schedule.register(is_windows=True), 1)
         self.assertIn("Accès refusé", err.getvalue())
+
+    # -- Revue finale C1 : la tâche doit lancer CE skillscout, pas une ancienne version --
+
+    def test_dossier_de_travail_du_paquet(self):
+        import skillscout
+        workdir = schedule.package_dir()
+        self.assertEqual(workdir, Path(skillscout.__file__).resolve().parent.parent)
+        self.assertTrue((workdir / "skillscout" / "__init__.py").exists())
+
+    def test_register_demarre_la_tache_dans_le_dossier_du_paquet(self):
+        ok = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with patch("skillscout.schedule._preflight", return_value=preflight()) as pf, \
+             patch("skillscout.schedule._powershell", return_value=ok) as ps, \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(schedule.register(is_windows=True), 0)
+        workdir = schedule.package_dir()
+        self.assertEqual(pf.call_args.args[0], workdir)
+        self.assertIn(f"-WorkingDirectory {schedule._ps_quote(str(workdir))}",
+                      ps.call_args.args[0])
+        import skillscout
+        self.assertIn(skillscout.__version__, out.getvalue())
+
+    def test_register_refuse_une_autre_version_ou_un_autre_fichier(self):
+        import skillscout
+        cas = {"version": preflight(version="0.2.0",
+                                    file=r"C:\Python314\Lib\site-packages\skillscout.py"),
+               "fichier": preflight(file=str(self.root_file())),
+               "import": preflight(code=1, stderr="ModuleNotFoundError: No module named "
+                                                  "'skillscout'")}
+        for nom, sortie in cas.items():
+            err = io.StringIO()
+            with patch("skillscout.schedule._preflight", return_value=sortie), \
+                 patch("skillscout.schedule._powershell") as ps, \
+                 contextlib.redirect_stderr(err):
+                self.assertEqual(schedule.register(is_windows=True), 1, nom)
+            ps.assert_not_called()
+            self.assertIn("py -3.14 -m pip install --upgrade .", err.getvalue(), nom)
+        self.assertIn("0.2.0", self._refus(cas["version"]))
+        self.assertIn("ModuleNotFoundError", self._refus(cas["import"]))
+        self.assertIn(skillscout.__version__, self._refus(cas["fichier"]))
+
+    def test_register_refuse_si_la_verification_echoue(self):
+        for exc in (OSError("introuvable"), subprocess.TimeoutExpired("py", 60)):
+            with patch("skillscout.schedule._preflight", side_effect=exc), \
+                 patch("skillscout.schedule._powershell") as ps, \
+                 contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(schedule.register(is_windows=True), 1)
+            ps.assert_not_called()
+
+    def test_preflight_lance_l_interpreteur_courant_depuis_le_dossier(self):
+        done = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with patch("skillscout.schedule.subprocess.run", return_value=done) as run:
+            schedule._preflight(Path(r"C:\dossier"))
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[:2], [sys.executable, "-c"])
+        self.assertIn("skillscout.__version__", cmd[2])
+        self.assertIn("skillscout.__file__", cmd[2])
+        kw = run.call_args.kwargs
+        self.assertEqual(kw["cwd"], Path(r"C:\dossier"))
+        self.assertEqual(kw["timeout"], 60)
+        self.assertTrue(kw["capture_output"])
+        self.assertEqual(kw["creationflags"], getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+    @staticmethod
+    def root_file():
+        return Path(tempfile.gettempdir()) / "ailleurs" / "skillscout" / "__init__.py"
+
+    @staticmethod
+    def _refus(sortie):
+        err = io.StringIO()
+        with patch("skillscout.schedule._preflight", return_value=sortie), \
+             patch("skillscout.schedule._powershell"), contextlib.redirect_stderr(err):
+            schedule.register(is_windows=True)
+        return err.getvalue()
 
     def test_unregister_script(self):
         self.assertEqual(schedule.unregister_script(),

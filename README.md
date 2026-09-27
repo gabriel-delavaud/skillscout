@@ -125,7 +125,15 @@ echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
 
 Puis **fermez et rouvrez votre Terminal**. (Si vous utilisez bash plutôt que zsh, remplacez `~/.zshrc` par `~/.bashrc`.)
 
-Sous Windows, sans rien installer : depuis le dossier cloné, `py -3.14 -m skillscout "ce que vous voulez faire"` (n'importe quel Python ≥ 3.11 convient, `py -3.14` n'est qu'un exemple).
+### Sous Windows
+
+Installez le paquet depuis le dossier cloné, avec le Python qui lancera la routine (n'importe quel Python ≥ 3.11 convient, `py -3.14` n'est qu'un exemple) :
+
+    git clone https://github.com/gabriel-delavaud/skillscout.git
+    cd skillscout
+    py -3.14 -m pip install --upgrade .
+
+`--upgrade` remplace une version plus ancienne déjà installée (par exemple la 0.2.0, qui tient dans un seul fichier `skillscout.py`) : sans cela, `py -3.14 -m skillscout` et la tâche planifiée pourraient lancer l'ancienne. La commande `skillscout` est ensuite disponible ; `py -3.14 -m skillscout …` revient au même.
 
 ### Vérifier que ça marche
 
@@ -139,9 +147,9 @@ Vous devez voir un classement s'afficher. Si c'est le cas, skillscout fonctionne
 
 Jev juge la sécurité *sémantique* du texte (ce qu'une liste de motifs ne voit pas) et sa pertinence. Il lui faut une clé, lue dans la variable d'environnement `TYPESAFE_API_KEY`. Sous Windows, posez-la une fois pour votre compte, dans PowerShell :
 
-    [Environment]::SetEnvironmentVariable('TYPESAFE_API_KEY', 'votre-clé', 'User')
+    $s = Read-Host 'Clé TypeSafe' -AsSecureString; [Environment]::SetEnvironmentVariable('TYPESAFE_API_KEY', [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)), 'User')
 
-puis rouvrez votre terminal. Les SKILL.md des candidats, qui sont publics, sont envoyés à TypeSafe, ainsi que le besoin que vous tapez. Aucun token Claude n'est consommé.
+La clé est demandée à part, en saisie masquée : elle n'apparaît ni à l'écran ni dans l'historique de PowerShell, où une commande qui la contiendrait en clair resterait enregistrée. Rouvrez ensuite votre terminal. Les SKILL.md des candidats, qui sont publics, sont envoyés à TypeSafe, ainsi que le besoin que vous tapez. Aucun token Claude n'est consommé.
 
 ---
 
@@ -218,6 +226,12 @@ Parce que personne ne relit avant installation, les critères sont plus stricts 
 | `skillscout installed` | liste ce que skillscout a installé |
 | `skillscout uninstall --last` | retire le dernier lot |
 | `skillscout uninstall NOM` | retire un skill installé par skillscout (et seulement ceux-là) |
+
+Pour la mettre en place sous Windows :
+
+1. installez skillscout depuis le dossier cloné avec `py -3.14 -m pip install --upgrade .` (voir « Sous Windows » plus haut) ; cela remplace l'ancienne 0.2.0 si elle est présente ;
+2. lancez `skillscout routine --dry-run` pour voir ce que la routine ferait ;
+3. lancez `skillscout routine --register` depuis **votre** terminal PowerShell, pas depuis l'app Claude. Avant de créer la tâche, `--register` vérifie la version de skillscout qu'elle lancera, et refuse si ce n'est pas celle que vous venez d'installer.
 
 Le rapport de chaque semaine est dans `~/.cache/skillscout/reports/` (par exemple `2026-W40.md`) : installés, en attente, écartés et pourquoi. Vos thèmes et votre pile se règlent dans `~/.config/skillscout/profile.toml`, créé au premier lancement. Un skill installé est pris en compte à la prochaine session de Claude.
 
