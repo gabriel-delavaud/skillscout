@@ -51,12 +51,12 @@ Un skill est **écarté** si son éditeur n'est **pas de confiance** **et** que 
 
 Un éditeur est de confiance s'il est :
 
-- dans une **liste blanche** d'éditeurs connus (Anthropic, Vercel, Google, Microsoft, Cloudflare, Supabase, Stripe, Etalab, obra, pbakaus…) — la liste est dans `TRUSTED_PUBLISHERS`, en tête de [`skillscout.py`](skillscout.py) ;
+- dans une **liste blanche** d'éditeurs connus (Anthropic, Vercel, Google, Microsoft, Cloudflare, Supabase, Stripe, Etalab, obra, pbakaus…) — la liste est dans `TRUSTED_PUBLISHERS`, en tête de [`skillscout/trust.py`](skillscout/trust.py) ;
 - **ou** une organisation GitHub qui remplit quatre conditions : compte de plus d'un an, au moins 10 dépôts **d'origine** (les forks ne comptent pas), dépôt mis à jour dans l'année, dépôt créé depuis plus de 90 jours.
 
 Un skill **sans fichier exécutable** publié par un inconnu est **gardé**, mais son texte est lu quand même. Un skill est aussi du texte que Claude exécutera : ce texte peut demander tout ce qu'un script ferait. C'est pour ça que skillscout le lit.
 
-Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier ; seul un extrait de 3 000 caractères est transmis à l'IA locale.
+Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier par les règles ; ce même texte normalisé, jusqu'à 102 000 caractères, est envoyé à Jev — au-delà, le skill n'est pas jugé par Jev (affiché avec `⚠` en recherche, et jamais installé par la routine).
 
 Le texte du `SKILL.md` est aussi fouillé pour des **motifs sensibles** qui, sans écarter le skill, le font descendre dans le classement et sont affichés : accès aux secrets (`~/.ssh`, `.env`, `credentials`), suppression récursive (`rm -rf`), envoi de données vers l'extérieur (`curl -d`, `POST`), et tentatives de manipuler l'IA (« ignore les instructions précédentes », « ne le dis pas à l'utilisateur »).
 
@@ -118,12 +118,14 @@ La commande `skillscout` est alors disponible partout. Pour mettre à jour : `pi
 ```bash
 git clone https://github.com/gabriel-delavaud/skillscout.git ~/skillscout
 mkdir -p ~/bin
-printf '#!/bin/sh\nexec python3 "$HOME/skillscout/skillscout.py" "$@"\n' > ~/bin/skillscout
+printf '#!/bin/sh\nPYTHONPATH="$HOME/skillscout${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m skillscout "$@"\n' > ~/bin/skillscout
 chmod +x ~/bin/skillscout
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
 ```
 
 Puis **fermez et rouvrez votre Terminal**. (Si vous utilisez bash plutôt que zsh, remplacez `~/.zshrc` par `~/.bashrc`.)
+
+Sous Windows, sans rien installer : depuis le dossier cloné, `py -3.14 -m skillscout "ce que vous voulez faire"` (n'importe quel Python ≥ 3.11 convient, `py -3.14` n'est qu'un exemple).
 
 ### Vérifier que ça marche
 
