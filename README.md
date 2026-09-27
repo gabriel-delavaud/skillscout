@@ -56,7 +56,7 @@ Un éditeur est de confiance s'il est :
 
 Un skill **sans fichier exécutable** publié par un inconnu est **gardé**, mais son texte est lu quand même. Un skill est aussi du texte que Claude exécutera : ce texte peut demander tout ce qu'un script ferait. C'est pour ça que skillscout le lit.
 
-Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier par les règles ; ce même texte normalisé, jusqu'à 102 000 caractères, est envoyé à Jev — au-delà, le skill n'est pas jugé par Jev (affiché avec `⚠` en recherche, et jamais installé par la routine).
+Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier par les règles ; ce même texte normalisé, jusqu'à 102 000 caractères, est envoyé à Jev — au-delà, le skill n'est pas jugé par Jev (affiché avec `⚠` en recherche, et jamais installé par la routine). Pour l'installation automatique, c'est plus strict : un fichier qui contient le moindre caractère invisible ou de contrôle (balises Unicode, sélecteurs de variante, contrôles de direction ou de terminal…) fait écarter le skill, car ces caractères peuvent cacher à vos yeux un texte que Claude, lui, lirait.
 
 Le texte du `SKILL.md` est aussi fouillé pour des **motifs sensibles** qui, sans écarter le skill, le font descendre dans le classement et sont affichés : accès aux secrets (`~/.ssh`, `.env`, `credentials`), suppression récursive (`rm -rf`), envoi de données vers l'extérieur (`curl -d`, `POST`), et tentatives de manipuler l'IA (« ignore les instructions précédentes », « ne le dis pas à l'utilisateur »).
 
