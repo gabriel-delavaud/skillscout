@@ -163,22 +163,29 @@ def precheck(row: dict, prof: profile_mod.Profile, present: set[str]) -> str | N
 
 
 # Caractères que Claude lit mais qu'un humain ne voit pas (ou voit dans un
-# autre ordre) : balises Unicode, sélecteurs de variante supplémentaires,
-# contrôles de direction. S'y ajoutent toutes les catégories Cf (format),
-# Co (usage privé) et Cn (non attribué). Seuls restent admis le liant sans
-# chasse (U+200D) et le sélecteur de présentation emoji (U+FE0F), qui
-# composent les emoji, et l'indicateur d'ordre des octets en tête de fichier.
-_HIDDEN_RANGES = ((0xE0000, 0xE007F), (0xE0100, 0xE01EF), (0x202A, 0x202E), (0x2066, 0x2069))
-_HIDDEN_CATEGORIES = ("Cf", "Co", "Cn")
-_HIDDEN_ALLOWED = {0x200D, 0xFE0F}
+# autre ordre) : balises Unicode, sélecteurs de variante (VS1–VS15 et
+# supplémentaires : ils suffisent à cacher un texte entier, 4 bits par
+# caractère), contrôles de direction, sélecteurs mongols, remplisseurs
+# Hangul, braille vide, liant graphème (CGJ), voyelles khmères invisibles.
+# S'y ajoutent les catégories Cc (contrôles C0, DEL, C1 : ESC réécrit un
+# terminal), Cf (format), Co (usage privé) et Cn (non attribué). Seuls
+# restent admis la tabulation et les fins de ligne, le liant sans chasse
+# (U+200D) et le sélecteur de présentation emoji (U+FE0F), qui composent les
+# emoji, et l'indicateur d'ordre des octets en tête de fichier.
+_HIDDEN_RANGES = ((0xE0000, 0xE007F), (0xE0100, 0xE01EF), (0xFE00, 0xFE0E),
+                  (0x202A, 0x202E), (0x2066, 0x2069), (0x180B, 0x180F),
+                  (0x115F, 0x1160), (0x3164, 0x3164), (0xFFA0, 0xFFA0),
+                  (0x2800, 0x2800), (0x034F, 0x034F), (0x17B4, 0x17B5))
+_HIDDEN_CATEGORIES = ("Cc", "Cf", "Co", "Cn")
+_HIDDEN_ALLOWED = {0x09, 0x0A, 0x0D, 0x200D, 0xFE0F}
 
 
 def hidden_character(text: str) -> int | None:
-    """Premier caractère invisible ou de contrôle de direction de `text` (son
-    code), ou None."""
+    """Premier caractère invisible ou de contrôle de `text` (son code), ou None."""
     for i, ch in enumerate(text):
         cp = ord(ch)
-        if cp < 0x80 or cp in _HIDDEN_ALLOWED or (cp == 0xFEFF and i == 0):
+        if (0x20 <= cp < 0x7F or cp in _HIDDEN_ALLOWED
+                or (cp == 0xFEFF and i == 0)):
             continue
         if (any(lo <= cp <= hi for lo, hi in _HIDDEN_RANGES)
                 or unicodedata.category(ch) in _HIDDEN_CATEGORIES):
