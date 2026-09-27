@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillscout"
-version = "0.2.0"
-description = "Trie les skills de skills.sh par confiance sans LLM, puis fait expliquer un top 5 par un modèle local — zéro token facturé"
+version = "2.0.0"
+description = "Trie les skills de skills.sh par confiance puis par Jev (TypeSafe), et installe chaque semaine les meilleurs skills méta — sans token Claude"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
@@ -23,7 +23,10 @@ classifiers = [
 Homepage = "https://github.com/gabriel-delavaud/skillscout"
 
 [project.scripts]
-skillscout = "skillscout:cli"
+skillscout = "skillscout.cli:cli"
 
 [tool.setuptools]
-py-modules = ["skillscout"]
+packages = ["skillscout"]
+
+[tool.setuptools.package-data]
+skillscout = ["default_profile.toml"]
