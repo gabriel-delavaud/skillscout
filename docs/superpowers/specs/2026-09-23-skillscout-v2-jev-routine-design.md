@@ -388,6 +388,31 @@ Tous sans réseau, sauf le banc.
 | S3 | Existe-t-il un type de question renvoyant du texte ? | Amélioration ultérieure de la ligne de pertinence | Types essayés `text`, `explain`, `summary` : les trois renvoient `400 api_usage_error` (« Invalid request »). Aucun type texte trouvé ; aucune constante à changer |
 | S4 | Forme exacte du flux RSC `initialSkills` sur /trending et /hot | Parseur et fixtures | tranché : `initialSkills`, 600 entrées, un seul `self.__next_f.push` (P12 du plan) |
 
+## Précisions apportées par le plan d'implémentation
+
+- **P1** Les modules `net.py` (seul appelant de `urlopen`), `config.py` (constantes et `Paths`), `inspection.py` (`inspect_candidate`), `report.py` et `schedule.py` s'ajoutent à la liste de la spec ; `profile.toml` vit dans le paquet (`skillscout/default_profile.toml`) pour être installé avec lui.
+- **P2** Point d'entrée : `skillscout.cli:cli` (enveloppe `SystemExit` autour de `main`).
+- **P3** Budget de découverte : 25 candidats par requête thématique, 50 premiers de chaque classement, 300 candidats au plus après dédoublonnage (par installations décroissantes). Réglable dans `profile.toml`.
+- **P4** En installation automatique, **tous** les fichiers du dossier (pas seulement `SKILL.md`) passent le scan déterministe et sont envoyés à Jev : Claude peut les lire, ils sont donc des instructions.
+- **P5** Les critères peu coûteux (installations, texte pur, nom, dossier unique) sont appliqués **avant** Jev pour ne pas payer d'appels inutiles.
+- **P6** Fichiers admis en « texte pur » : `*.md`, `*.txt`, et les noms `LICENSE` / `NOTICE` sans extension. Au plus 50 fichiers et 1 Mo au total.
+- **P7** Ce qui est mis en cache « déjà jugé » (D11) : la **réponse Jev** par `(source, skill_id, tree_sha, version des questions)`, 30 jours. Un skill en attente n'est donc pas re-facturé la semaine suivante.
+- **P8** L'intégrité à l'installation est vérifiée par l'empreinte Git de chaque blob : `sha1(b"blob <taille>\0" + octets) == sha`.
+- **P9** Préparation dans `~/.claude/.skillscout-staging/` (hors du dossier des skills, même volume), puis `os.rename` vers `~/.claude/skills/<nom>`.
+- **P10** `uninstall` refuse un dossier dont le contenu ne correspond plus au manifeste (modifié ou remplacé par l'utilisateur).
+- **P11** La tâche est créée par PowerShell `Register-ScheduledTask` et non `schtasks /Create` : seul le premier sait poser « exécuter dès que possible si une exécution a été manquée » (`-StartWhenAvailable`). Elle lance `pythonw.exe -m skillscout routine` (pas de fenêtre) et `gh` est lancé avec `CREATE_NO_WINDOW`.
+- **P12** S4 (forme des classements) est **déjà tranché** : `/`, `/trending`, `/hot` embarquent chacun, dans un unique `self.__next_f.push([1,"…"])`, une liste `"initialSkills":[…]` de 600 objets `{source, skillId, name, installs, …}`.
+- **P13** Le banc de calibration (spec § Tests, point 7) n'utilise **pas** de SKILL.md piégés fabriqués. Corpus : (A) skills réputés sains, pour le taux de refus à tort ; (B) vrais skills de skills.sh déjà signalés par le tri déterministe, jugés propres par Jev ou non, listés pour relecture humaine. La garantie « aucun piège installé » repose sur la conception : un skill signalé par les motifs n'est jamais installable (`precheck`), et Jev ne fait qu'ajouter des refus.
+
+## Décisions prises pendant l'exécution (2026-09-23)
+
+- Le verrou de la routine est tenu par le système d'exploitation (`msvcrt`/`fcntl`) pendant toute l'exécution, plutôt que par un verrou daté : une course a été démontrée sur l'approche par âge. Il disparaît avec le processus, même tué, et le fichier `~/.cache/skillscout/routine.lock` reste sur le disque par conception (voir § Planification).
+- Installation : l'entrée et la forme JSON du manifeste sont préparées avant le renommage, avec annulation sur toute exception ; la désinstallation déplace atomiquement vers la zone de préparation ; les collisions de casse entre chemins ou dossiers sont refusées (voir § Installation).
+- Le rapport et le journal sont protégés et écrits sous le verrou de la routine, le journal portant `started_at`/`finished_at` (voir § Rapport et journal).
+- Questions Jev en version 2 (voir § Questions, « Version 2 des questions »).
+- Gravité d'installation ≥ 2 : décision utilisateur après calibration (voir § Tests, point 7, « Décision utilisateur — seuil de gravité relevé à 2 »).
+- Constantes mesurées : limite de texte Jev 102 000 caractères, délai 15 s, 4 appels en parallèle (voir § Spikes en tête de plan, S1 et S2).
+
 ## Limites connues
 
 - Jev est un classifieur ; un SKILL.md peut chercher à le tromper. D2, D3, la
