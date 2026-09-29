@@ -94,7 +94,7 @@ def promote(rows: list[dict]) -> list[dict]:
         if not rejected or kept.get("_tries", 0) >= MAX_PROMOTIONS:
             continue
         group = [kept] + kept["_members"]
-        judged = {m.get("skill_md_sha") for m in group if "jev" in m}
+        judged = {m.get("skill_md_sha") for m in group if "jev" in m} - {None}
         spare = [m for m in kept["_members"] if not m["excluded"] and "jev" not in m
                  and m.get("skill_md_sha") not in judged]
         if not spare:

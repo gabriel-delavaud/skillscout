@@ -130,10 +130,11 @@ class Judgement:
     severity: float = 0.0                         # 0..3
     relevance: dict = field(default_factory=dict) # meta, need|stack, substance -> 0..3
     note: str = ""                                # raison si "unjudged"
+    outage: bool = False                          # l'appel à Jev lui-même a échoué
 
 
-def unjudged(note: str) -> Judgement:
-    return Judgement("unjudged", note=note)
+def unjudged(note: str, *, outage: bool = False) -> Judgement:
+    return Judgement("unjudged", note=note, outage=outage)
 
 
 def _num(value, hi: float) -> float:
@@ -234,7 +235,7 @@ def judge_one(row: dict, client, mode: str, *, need: str | None, profile: str | 
                         sorted(row.get("skill_files") or {}), need=need, profile=profile)
     answers = client.classify(state, questions_for(mode))
     if answers is None:
-        return unjudged(client.last_error or "Jev indisponible")
+        return unjudged(client.last_error or "Jev indisponible", outage=True)
     judgement = parse_answers(answers, mode)
     if judgement.status == "ok" and cacheable:
         cache.put(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile, normalized),

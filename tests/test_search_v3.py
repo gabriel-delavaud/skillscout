@@ -443,6 +443,52 @@ class TestCliRevue(CliCase):
         self.assertEqual(len(self.inspected), 2 * config.SEARCH_BATCH)   # pas de lot 3
         self.assertEqual(jev.calls, 2 * config.SEARCH_BATCH)
 
+    def test_skill_injugeable_n_est_pas_une_panne(self):
+        # Revue 2 : une version promue trop longue pour Jev arrêtait toute la recherche.
+        cands = [cand("evals", "big/evil", rank_=0), cand("evals", "small/huge", rank_=1)] + \
+                [cand(f"g{i:02}", f"org/g{i:02}", rank_=2 + i) for i in range(40)]
+        evil = answers(3.0)
+        evil["exfiltration"] = {"noul": 0.95}
+
+        def inspect(c):
+            if c["source"] == "small/huge":
+                return described(c, "huge", score=40.0) | {"body": "x" * (v.JEV_TEXT_LIMIT + 1)}
+            return described(c, c["source"].split("/")[1],
+                             score=95.0 if c["source"] == "big/evil" else 80.0)
+        jev = ScriptedJev(lambda d: evil if d == "evil" else answers(0.0 if d < "g23" else 3.0))
+        code, out, err = self.run_cli(["x", "-q", "q"], cands, jev, inspect=inspect)
+        self.assertEqual(code, 0)
+        self.assertNotIn("Jev indisponible", err)
+        self.assertGreater(len(self.inspected), config.SEARCH_BATCH)
+        self.assertIn("TOP 10 par pertinence (Jev)", out)
+
+    def test_une_seule_erreur_d_appel_n_arrete_pas(self):
+        many = [cand(f"s{i:02}", f"org/r{i:02}", rank_=i) for i in range(60)]
+        state = {"n": 0}
+
+        def reply(d):
+            state["n"] += 1
+            return None if d == "s30" else answers(3.0 if d in ("s00", "s40") else 0.0)
+        code, out, err = self.run_cli(["x", "-q", "q"], many, ScriptedJev(reply))
+        self.assertEqual(code, 0)
+        self.assertNotIn("Jev indisponible", err)
+        self.assertIn("s40", out)
+        self.assertIn("1 non jugé(s) par Jev", out)
+
+    def test_version_d_un_lot_sans_nom_nouveau_promue(self):
+        # Revue 2 : un lot n'apportant que des versions de noms connus ne promouvait rien.
+        cands = [cand("evals", "big/off", rank_=0)] + \
+                [cand(f"z{i:02}", f"org/z{i:02}", rank_=1 + i) for i in range(24)] + \
+                [cand("evals", "small/good", rank_=25)] + \
+                [cand(f"z{i:02}", f"autre/z{i:02}", rank_=26 + i) for i in range(24)]
+        jev = ScriptedJev(lambda d: answers(3.0 if d == "good" else 0.0))
+        code, out, _ = self.run_cli(
+            ["x", "-q", "q"], cands, jev,
+            inspect=lambda c: described(c, c["source"].split("/")[1],
+                                        score=95.0 if c["source"] == "big/off" else 40.0))
+        self.assertEqual(code, 0)
+        self.assertIn("small/good", out)
+
     def test_non_juges_comptes_dans_l_en_tete(self):
         cands = [cand("a", rank_=0), cand("b", rank_=1)]
         jev = ScriptedJev(lambda d: answers(3.0) if d == "a" else None)

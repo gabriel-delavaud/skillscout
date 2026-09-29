@@ -156,6 +156,7 @@ def _main_search(argv: list[str]) -> int:
     # sans Jev) ou atteindre le plafond.
     rows: list[dict] = []
     ignored, skipped, examined, pos, batch_no = [], [], 0, 0, 0
+    failed_calls = 0      # appels à Jev en échec d'affilée (pas les refus propres à un skill)
     ceiling = min(args.limit, len(candidates))
     while pos < ceiling:
         batch = candidates[pos:min(pos + config.SEARCH_BATCH, ceiling)]
@@ -166,23 +167,31 @@ def _main_search(argv: list[str]) -> int:
         skipped += skp
         examined += len(evaluated)
         todo = rank.add_deduplicated(rows, evaluated)
+        if use_jev:
+            # Une version arrivée dans ce lot peut remplacer une version déjà rejetée.
+            todo += rank.promote(rows)
         outage = False
         while use_jev and todo:
             verdict.judge_rows(todo, client, "manual", need=args.besoin)
             judged = [r for r in todo if "jev" in r]
-            if judged and not any(r["jev"].status == "ok" for r in judged):
-                note = judged[0]["jev"].note
-                if not jev_ok:        # Jev n'a encore jamais répondu : repli déterministe
-                    banner = f"Jev indisponible ({note}) — classement déterministe seul."
-                    for r in rank.members(rows):
-                        r.pop("jev", None)
-                    use_jev = False
-                else:                 # panne en cours de route : on s'arrête là
-                    banner = (f"Jev indisponible à partir du lot {batch_no} ({note}) — "
-                              "résultats partiels.")
-                    outage = True
+            ok = [r for r in judged if r["jev"].status == "ok"]
+            down = [r for r in judged if r["jev"].outage]
+            # Un skill trop long ou illisible n'est pas une panne : seuls les
+            # appels à Jev eux-mêmes en échec comptent.
+            failed_calls = 0 if ok else failed_calls + len(down)
+            if not jev_ok and down and len(down) == len(judged):
+                # Jev n'a encore jamais répondu : repli déterministe.
+                banner = f"Jev indisponible ({down[0]['jev'].note}) — classement déterministe seul."
+                for r in rank.members(rows):
+                    r.pop("jev", None)
+                use_jev = False
                 break
-            jev_ok = jev_ok or bool(judged)
+            if jev_ok and failed_calls >= config.JEV_OUTAGE_CALLS:
+                banner = (f"Jev indisponible à partir du lot {batch_no} "
+                          f"({down[0]['jev'].note}) — résultats partiels.")
+                outage = True
+                break
+            jev_ok = jev_ok or bool(ok)
             verdict.apply_manual(todo)
             # Une version rejetée par Jev laisse sa place à la suivante du groupe.
             todo = rank.promote(rows)

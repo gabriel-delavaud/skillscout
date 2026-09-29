@@ -458,7 +458,7 @@ prises avec l'utilisateur (séance de questions du 2026-09-29) :
   < 1,5), la suivante la plus sûre, non écartée et de contenu différent, est jugée à
   sa place (`rank.promote`, au plus `MAX_PROMOTIONS` = 2 fois par nom), quel que soit
   le lot où elle arrive. `group_rank` porte le meilleur rang du groupe sans écraser
-  `relevance_rank`. Une panne de Jev après un premier lot réussi arrête la recherche
+  `relevance_rank`. Une panne de Jev (3 appels en échec d'affilée, `config.JEV_OUTAGE_CALLS` ; un skill trop long ou illisible ne compte pas) après un premier succès arrête la recherche
   (« Jev indisponible à partir du lot N — résultats partiels ») ; les non-jugés sont
   comptés dans l'en-tête. Le frontmatter vient du SKILL.md principal.
 - « ✓ déjà installé » quand `~/.claude/skills/<nom>/SKILL.md` a l'empreinte de l'un
