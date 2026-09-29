@@ -486,14 +486,17 @@ class TestFetchSkillMd(unittest.TestCase):
         self.assertEqual(len(out), 100)
 
 
-class TestFormatTop10(unittest.TestCase):
-    def test_affiche_score_source_et_drapeaux(self):
-        out = cli.format_top10([
-            {"skill_id": "a", "source": "x/y", "score": 61.5,
-             "flags": ["markdown pur"], "installs": 12}])
-        self.assertIn("x/y", out)
+class TestFormatTop(unittest.TestCase):
+    def test_affiche_score_source_forces_et_faiblesses(self):
+        out = cli.format_top([
+            {"skill_id": "a", "source": "x/y", "score": 61.5, "tree_sha": "abcdef1234",
+             "relevance": "besoin 2.0/3", "description": "fait des choses",
+             "strengths": ["fort"], "weaknesses": ["faible"]},
+            {"skill_id": "b", "source": "x/z", "score": 10.0}])
+        self.assertIn("x/y@abcdef1", out)
         self.assertIn("61.5", out)
-        self.assertIn("markdown pur", out)
+        self.assertIn("    besoin 2.0/3\n    fait des choses\n    + fort\n    − faible", out)
+        self.assertIn("− faible\n\n 2. b", out)            # une ligne vide entre deux skills
 
 
 SNAP_OK = {"sha": "abcdef0123456789" * 2 + "abcdef01",

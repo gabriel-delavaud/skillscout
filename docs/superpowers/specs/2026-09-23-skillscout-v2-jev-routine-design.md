@@ -477,6 +477,43 @@ les vrais services sur trois besoins de référence. Au 2026-09-29, « debug » 
 le pack hamelsmu/evals-skills, que Jev juge moins pertinent (1,1 à 2,0/3) que les
 eval-harness (2,9/3) : désaccord documenté, pas un défaut du pipeline.
 
+## Retrait de la routine (2.2.0, 2026-09-29)
+
+Décision de l'utilisateur : « je préfère rechercher manuellement ». La routine
+hebdomadaire d'installation automatique est retirée, avec tout ce qui ne servait
+qu'à elle : `routine.py`, `schedule.py` (tâche planifiée), `report.py`, `profile.py`
+et `default_profile.toml`, `install.py` (installation, manifeste, `uninstall`,
+`installed`), les classements /trending et /hot (`sources.fetch_leaderboard`), le
+mode « install » des questions Jev et le cache des réponses Jev, `bench/calibrate.py`.
+Les commandes `skillscout routine`, `uninstall` et `installed` répondent qu'elles
+ont été retirées (code 2) au lieu d'être prises pour un besoin. Seule la détection
+« déjà installé » survit, en lecture seule, dans `local.py`. Au moment du retrait,
+aucune tâche planifiée n'existait et la routine n'avait rien installé (pas de
+manifeste) ; les fichiers laissés par la simulation du 2026-09-27
+(`~/.config/skillscout/profile.toml`, `~/.cache/skillscout/reports/`,
+`journal.jsonl`, `routine.lock`) ne sont plus lus. Les sections de ce document
+consacrées à la routine sont historiques.
+
+## Top 5 expliqué (2.2.0, 2026-09-29)
+
+Demande de l'utilisateur : une ligne vide entre chaque skill, 5 skills au plus,
+avec pour chacun ses forces et faiblesses, en gardant ses notes. Choix faits :
+
+- La recherche continue jusqu'à 10 skills pertinents (`config.TOP_N`), puis les 5
+  meilleurs sont affichés (`config.DISPLAY_N`) : option « chercher 10, afficher 5 ».
+- Forces et faiblesses tirées des mesures et de Jev (option « mesures + Jev ») :
+  `explain.strengths_weaknesses` applique des règles fixes aux indicateurs du tri
+  de confiance (libellés produits par `trust.py`), aux notes de Jev et à un second
+  appel à Jev posé aux seuls skills affichés (`verdict.EXPLAIN_QUESTIONS`) :
+  `examples`, `steps`, `third_party` (Noul ; oui ≥ 0,6, non ≤ 0,25) et `writing`
+  (Score 0–3 : le SKILL.md est-il bien écrit comme instructions pour un LLM,
+  précis, détaillé, avec déclencheur, étapes, contraintes et résultat attendu ;
+  ajouté à la demande de l'utilisateur). La note d'écriture s'affiche avec les
+  autres (« écriture x/3 ») mais ne change pas le classement. Les seuils portent
+  sur la note arrondie au dixième, celle qui est affichée. Aucune phrase n'est
+  rédigée par un modèle ; une réponse d'explication incomplète ne dit rien. Relecture : un motif relevé par le scan se dit « le texte mentionne », jamais « demande » (un texte défensif le déclenche aussi) ; « sans fichier exécutable » reste un fait sur l'arborescence ; si aucune explication ne revient, un message le dit.
+- Pas d'explication Jev sans Jev, ni après une panne : les mesures seules restent.
+
 ## Limites connues
 
 - Jev est un classifieur ; un SKILL.md peut chercher à le tromper. D2, D3, la

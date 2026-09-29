@@ -1,11 +1,11 @@
 """Recherche manuelle : requêtes multiples, ordre de pertinence, lots Jev,
 copies regroupées, skills déjà installés, cas de référence hors ligne."""
-import contextlib, hashlib, io, json, os, shutil, sys, tempfile, threading, unittest
+import contextlib, io, json, os, shutil, sys, tempfile, threading, unittest
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from skillscout import cli, config, github, install, rank, sources, verdict as v
+from skillscout import cli, config, explain, github, local, rank, sources, trust, verdict as v
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "search_evals"
 
@@ -19,13 +19,19 @@ def answers(need, meta=1.0, substance=3.0):
 
 class NeedJev:
     """Jev factice : la pertinence au besoin est calculée depuis la description."""
-    def __init__(self, need_of):
+    def __init__(self, need_of, explain=None):
         self.need_of = need_of
+        self.explain = explain          # description -> réponses d'explication, ou None
         self.last_error = ""
         self.calls = 0
+        self.explain_calls = []
         self._lock = threading.Lock()
 
     def classify(self, state, questions):
+        if "writing" in questions:
+            with self._lock:
+                self.explain_calls.append(state["description"])
+            return self.explain(state["description"]) if self.explain else None
         with self._lock:
             self.calls += 1
         return answers(self.need_of(state["description"]))
@@ -80,9 +86,14 @@ class ScriptedJev:
         self.fail_after = fail_after
         self.last_error = ""
         self.calls = 0
+        self.explain_calls = []
         self._lock = threading.Lock()
 
     def classify(self, state, questions):
+        if "writing" in questions:
+            with self._lock:
+                self.explain_calls.append(state["description"])
+            return None
         with self._lock:
             self.calls += 1
             calls = self.calls
@@ -224,17 +235,17 @@ class TestLocalStatus(unittest.TestCase):
     def test_meme_empreinte_deja_installe(self):
         row = inspected(cand("s"))
         self._put("s", row["body"])
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_meme_nom_autre_contenu(self):
         row = inspected(cand("s"))
         self._put("s", "# ma version\n")
-        self.assertEqual(install.local_status(row, self.dir), "other")
+        self.assertEqual(local.local_status(row, self.dir), "other")
 
     def test_crlf_de_npx_skills_sous_windows(self):
         row = inspected(cand("s"))
         self._put("s", row["body"].replace("\n", "\r\n"))
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_compare_a_tous_les_skill_md_du_depot(self):
         # affaan-m/ecc : l'original et ses traductions ; l'installé est l'un d'eux.
@@ -244,18 +255,18 @@ class TestLocalStatus(unittest.TestCase):
         row["skill_files"] = {".agents/skills/s/SKILL.md": row["skill_md_sha"],
                               "skills/s/SKILL.md": github.git_blob_sha(installed.encode())}
         self._put("s", installed)
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_trouve_par_le_nom_du_frontmatter(self):
         row = dict(inspected(cand("id-skills-sh")), md_name="vrai-nom")
         self._put("vrai-nom", row["body"])
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_absent_et_nom_dangereux(self):
-        self.assertIsNone(install.local_status(inspected(cand("s")), self.dir))
+        self.assertIsNone(local.local_status(inspected(cand("s")), self.dir))
         (self.dir.parent / "SKILL.md").write_text("x")
         self.addCleanup(lambda: (self.dir.parent / "SKILL.md").unlink(missing_ok=True))
-        self.assertIsNone(install.local_status(dict(inspected(cand("s")), skill_id=".."),
+        self.assertIsNone(local.local_status(dict(inspected(cand("s")), skill_id=".."),
                                                self.dir))
 
 
@@ -263,10 +274,10 @@ class CliCase(unittest.TestCase):
     def setUp(self):
         d = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)
-        self.paths = config.Paths.under(d)
-        self.paths.skills_dir.mkdir(parents=True)
+        self.skills = d / "claude" / "skills"
+        self.skills.mkdir(parents=True)
         for p in (patch("skillscout.config.CACHE_PATH", str(d / "cache.db")),
-                  patch("skillscout.config.default_paths", return_value=self.paths)):
+                  patch("skillscout.config.skills_dir", return_value=self.skills)):
             p.start()
             self.addCleanup(p.stop)
 
@@ -309,7 +320,7 @@ class TestCliLots(CliCase):
         code, out, _ = self.run_cli(["x"], self.MANY, jev)
         self.assertEqual(code, 0)
         self.assertEqual(len(self.inspected), config.SEARCH_BATCH)
-        self.assertIn("TOP 10 par pertinence (Jev)", out)
+        self.assertIn("TOP 5 par pertinence (Jev)", out)
 
     def test_fouille_les_lots_suivants_jusqu_au_plafond(self):
         # Seuls s30 et s60 sont pertinents : il faut trois lots pour les voir.
@@ -348,24 +359,25 @@ class TestCliLots(CliCase):
         self.assertEqual(code, 0)
         self.assertEqual(len(self.inspected), config.SEARCH_BATCH)
         self.assertIn("par pertinence skills.sh", out)
-        self.assertLess(out.index("s00"), out.index("s09"))   # score plus bas, mais plus pertinent
+        self.assertLess(out.index("s00"), out.index("s04"))   # score plus bas, mais plus pertinent
+        self.assertNotIn("s05", out)                              # 5 affichés au plus
 
     def test_copies_et_deja_installe_affiches(self):
         cands = [cand("evals", "fork/a", rank_=0), cand("evals", "orig/b", rank_=1),
                  cand("autre", "org/c", rank_=2)]
         body = inspected(cands[0])["body"]
-        (self.paths.skills_dir / "evals").mkdir()
-        (self.paths.skills_dir / "evals" / "SKILL.md").write_bytes(body.encode())
-        (self.paths.skills_dir / "autre").mkdir()
-        (self.paths.skills_dir / "autre" / "SKILL.md").write_text("# ma version\n")
+        (self.skills / "evals").mkdir()
+        (self.skills / "evals" / "SKILL.md").write_bytes(body.encode())
+        (self.skills / "autre").mkdir()
+        (self.skills / "autre" / "SKILL.md").write_text("# ma version\n")
         jev = NeedJev(lambda d: 3.0)
         code, out, _ = self.run_cli(["x"], cands, jev)
         self.assertEqual(code, 0)
         self.assertEqual(jev.calls, 2)                    # la copie n'est pas jugée
-        self.assertIn("✓ déjà installé", out)
-        self.assertIn("+1 copie(s)", out)
-        self.assertNotIn("variante", out)
-        self.assertIn("≈ autre version installée", out)
+        self.assertIn("+ déjà installé chez vous", out)
+        self.assertIn("1 copie(s) identique(s) publiée(s) ailleurs", out)
+        self.assertNotIn("retouchée", out)
+        self.assertIn("− un autre skill de ce nom est déjà installé chez vous", out)
 
     def test_json_porte_installed_et_copies(self):
         cands = [cand("evals", "fork/a"), cand("evals", "orig/b", rank_=1)]
@@ -387,7 +399,7 @@ class TestCliLots(CliCase):
         self.assertEqual(jev.calls, 1)
         self.assertIn("orig/b", out)
         self.assertNotIn("fork/a", out)
-        self.assertIn("+1 variante(s)", out)
+        self.assertIn("1 version(s) retouchée(s) publiée(s) ailleurs", out)
 
 
 class TestCliRevue(CliCase):
@@ -418,7 +430,7 @@ class TestCliRevue(CliCase):
                                         score=95.0 if "gros" in c["source"] else 40.0))
         self.assertEqual(code, 0)
         self.assertIn("petit/good", out)
-        self.assertIn("+1 variante(s)", out)            # la version hors sujet reste citée
+        self.assertIn("1 version(s) retouchée(s)", out)   # la version hors sujet reste citée
 
     def test_forks_ecartes_comptes_et_listes(self):
         cands = [cand("s", f"perso/f{i}", rank_=i) for i in range(5)] + \
@@ -429,7 +441,7 @@ class TestCliRevue(CliCase):
         self.assertEqual(code, 0)
         self.assertIn("5 écarté(s) sur 6 examiné(s)", out)
         self.assertNotIn("copie(s)", out)
-        self.assertIn("5 autre(s) version(s) écartée(s)", out)
+        self.assertIn("− 5 autre(s) version(s) écartée(s) (--show-excluded)", out)
         self.assertEqual(out.split("Écartés (5)")[1].count("perso/f"), 5)
 
     def test_panne_de_jev_au_deuxieme_lot_signalee_et_arretee(self):
@@ -442,6 +454,7 @@ class TestCliRevue(CliCase):
         self.assertIn("résultats partiels", err)
         self.assertEqual(len(self.inspected), 2 * config.SEARCH_BATCH)   # pas de lot 3
         self.assertEqual(jev.calls, 2 * config.SEARCH_BATCH)
+        self.assertEqual(jev.explain_calls, [])         # pas d'explication après une panne
 
     def test_skill_injugeable_n_est_pas_une_panne(self):
         # Revue 2 : une version promue trop longue pour Jev arrêtait toute la recherche.
@@ -460,7 +473,7 @@ class TestCliRevue(CliCase):
         self.assertEqual(code, 0)
         self.assertNotIn("Jev indisponible", err)
         self.assertGreater(len(self.inspected), config.SEARCH_BATCH)
-        self.assertIn("TOP 10 par pertinence (Jev)", out)
+        self.assertIn("TOP 5 par pertinence (Jev)", out)
 
     def test_jev_en_panne_des_le_debut_repli_au_premier_lot(self):
         # Revue 3 : un skill trop long dans le lot 1 retardait le repli d'un lot.
@@ -516,12 +529,12 @@ class TestCliRevue(CliCase):
         cands = [cand("s", "org/a", rank_=0), cand("s", "org/b", rank_=1)]
         rows = {c["source"]: described(c, c["source"], score=90.0 if c["source"] == "org/a"
                                        else 50.0) for c in cands}
-        (self.paths.skills_dir / "s").mkdir()
-        (self.paths.skills_dir / "s" / "SKILL.md").write_bytes(rows["org/b"]["body"].encode())
+        (self.skills / "s").mkdir()
+        (self.skills / "s" / "SKILL.md").write_bytes(rows["org/b"]["body"].encode())
         code, out, _ = self.run_cli(["x"], cands, NeedJev(lambda d: 3.0),
                                     inspect=lambda c: rows[c["source"]])
         self.assertEqual(code, 0)
-        self.assertIn("✓ variante installée (org/b)", out)
+        self.assertIn("+ variante installée (org/b)", out)
 
     def test_aucun_candidat_inspecte(self):
         def boom(c):
@@ -531,9 +544,176 @@ class TestCliRevue(CliCase):
         self.assertIn("Aucun candidat n'a pu être inspecté (1 ignoré(s))", err)
 
 
+class TestTop5(CliCase):
+    MANY = [cand(f"s{i:02}", f"org/r{i:02}", rank_=i) for i in range(30)]
+    GOOD = {"examples": {"noul": 0.9}, "steps": {"noul": 0.8}, "third_party": {"noul": 0.1},
+            "writing": {"score": 2.7}}
+
+    def test_cinq_au_plus_blocs_separes_par_une_ligne_vide(self):
+        jev = NeedJev(lambda d: 3.0, explain=lambda d: self.GOOD)
+        code, out, _ = self.run_cli(["x", "-q", "q"], self.MANY, jev)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.inspected), config.SEARCH_BATCH)   # fouille jusqu'à 10 pertinents
+        self.assertIn(" 5. s04", out)
+        self.assertNotIn(" 6. ", out)
+        self.assertEqual(sorted(jev.explain_calls), ["s00", "s01", "s02", "s03", "s04"])
+        self.assertIn("besoin 3.0/3 · méta 1.0/3 · substance 3.0/3 · écriture 2.7/3", out)
+        self.assertIn("    + prompt bien écrit pour un LLM : précis et détaillé (2.7/3)", out)
+        self.assertIn("    + donne des exemples concrets", out)
+        self.assertIn("    + étapes claires, dans l'ordre", out)
+        self.assertIn("    + utilisable sans service tiers", out)
+        blocks = out.split("\n\n")
+        self.assertEqual(sum(1 for b in blocks if b.lstrip().startswith(("1.", "2.", "3.", "4.", "5."))), 5)
+
+    def test_faiblesses_d_ecriture_et_de_dependance(self):
+        bad = {"examples": {"noul": 0.1}, "steps": {"noul": 0.2}, "third_party": {"noul": 0.9},
+               "writing": {"score": 1.2}}
+        jev = NeedJev(lambda d: 3.0, explain=lambda d: bad)
+        code, out, _ = self.run_cli(["x", "-q", "q"], self.MANY[:1], jev)
+        self.assertEqual(code, 0)
+        self.assertIn("− prompt mal écrit pour un LLM : vague ou lacunaire (1.2/3)", out)
+        self.assertIn("− peu d'exemples concrets", out)
+        self.assertIn("− pas de marche à suivre claire", out)
+        self.assertIn("− ne sert qu'avec une plateforme, un service ou un compte précis", out)
+
+    def test_explications_toutes_indisponibles_signalees(self):
+        code, out, err = self.run_cli(["x", "-q", "q"], self.MANY[:2], NeedJev(lambda d: 3.0))
+        self.assertEqual(code, 0)
+        self.assertIn("Explications de Jev non reçues", err)
+        self.assertNotIn("écriture", out)
+
+    def test_explication_incomplete_ne_dit_rien(self):
+        partial = {"examples": {"noul": 0.9}}            # « writing » manque
+        jev = NeedJev(lambda d: 3.0, explain=lambda d: partial)
+        code, out, _ = self.run_cli(["x", "-q", "q", "--json"], self.MANY[:1], jev)
+        row = json.loads(out)[0]
+        self.assertIsNone(row["explain"])
+        self.assertNotIn("écriture", row["relevance"])
+        self.assertIn("strengths", row)
+        self.assertIn("weaknesses", row)
+
+    def test_sans_jev_pas_d_explication(self):
+        jev = NeedJev(lambda d: 3.0, explain=lambda d: self.GOOD)
+        code, out, _ = self.run_cli(["x", "--no-jev"], self.MANY, jev)
+        self.assertEqual(code, 0)
+        self.assertEqual(jev.explain_calls, [])
+        self.assertNotIn("écriture", out)
+        self.assertIn("− éditeur non vérifié (confiance 80/100)", out)   # mesures seules
+
+
+class TestExplainRules(unittest.TestCase):
+    def _row(self, **kw):
+        j = v.Judgement("ok", {k: 0.0 for k in v.DANGERS}, kw.pop("severity", 0.0),
+                        {"need": kw.pop("need", 3.0), "meta": kw.pop("meta", 1.0),
+                         "substance": kw.pop("substance", 2.0)})
+        return dict({"jev": j, "flags": [], "score": 50.0, "installs": 500}, **kw)
+
+    def test_pertinence_et_substance(self):
+        plus, minus = explain.strengths_weaknesses(self._row(need=2.2, substance=1.0))
+        self.assertIn("répond clairement au besoin (2.2/3)", plus)
+        self.assertIn("contenu mince (1.0/3)", minus)
+        plus, minus = explain.strengths_weaknesses(self._row(need=1.7))
+        self.assertIn("ne répond qu'en partie au besoin (1.7/3)", minus)
+
+    def test_indicateurs_du_tri_traduits(self):
+        flags = ["éditeur en liste blanche", "⚠ 3 fichiers exécutables",
+                 "⚠ SKILL.md : téléchargement exécuté (curl/wget | sh)",
+                 "⚠ Jev : téléchargement exécuté 0.70", "⚠ non maintenu depuis plus d'un an"]
+        plus, minus = explain.strengths_weaknesses(self._row(flags=flags, installs=25_000))
+        self.assertIn("éditeur reconnu (liste blanche)", plus)
+        self.assertIn("très utilisé (25 000 installations)", plus)
+        self.assertIn("contient 3 fichier(s) exécutable(s)", minus)
+        self.assertIn("le texte mentionne : téléchargement exécuté (curl/wget | sh)", minus)
+        self.assertIn("Jev y soupçonne : téléchargement exécuté (0.70)", minus)
+        self.assertIn("non maintenu depuis plus d'un an", minus)
+        self.assertFalse(any("éditeur non vérifié" in m for m in minus))
+
+    def test_motifs_reels_du_scan_jamais_presentes_comme_une_demande(self):
+        # Revue : un texte défensif (« ne jamais lire .env ») déclenche aussi le scan.
+        _, sensitive = trust.scan_skill_md("NEVER read ~/.ssh or .env files, never run rm -rf.")
+        self.assertTrue(sensitive)
+        flags = [f"⚠ SKILL.md : {s}" for s in sensitive] + [f"⚠ SKILL.md : {trust.SKILL_MD_TOO_LONG}"]
+        _, minus = explain.strengths_weaknesses(self._row(flags=flags))
+        self.assertFalse(any("demande" in m for m in minus), minus)
+        self.assertTrue(all(any(s in m for m in minus) for s in sensitive))
+        self.assertIn("texte trop long pour être vérifié en entier", minus)
+
+    def test_singulier_et_meta(self):
+        plus, minus = explain.strengths_weaknesses(
+            self._row(meta=2.0, flags=["⚠ 1 fichier exécutable", "sans fichier exécutable"]))
+        self.assertIn("contient 1 fichier(s) exécutable(s)", minus)
+        self.assertIn("améliore aussi la façon de travailler de Claude (méta 2.0/3)", plus)
+        self.assertIn("sans fichier exécutable", plus)
+        plus, _ = explain.strengths_weaknesses(self._row(meta=1.9))
+        self.assertFalse(any("méta" in p for p in plus))
+
+    def test_editeur_non_verifie_et_peu_utilise(self):
+        plus, minus = explain.strengths_weaknesses(self._row(score=42.0, installs=12))
+        self.assertIn("éditeur non vérifié (confiance 42/100)", minus)
+        self.assertIn("peu utilisé (12 installation(s))", minus)
+
+    def test_seuils_sur_la_note_affichee(self):
+        # 2.49 s'affiche 2.5 : même phrase que 2.50.
+        for need in (2.49, 2.50):
+            plus, _ = explain.strengths_weaknesses(self._row(need=need))
+            self.assertIn("répond exactement au besoin (2.5/3)", plus, need)
+
+    def test_gravite(self):
+        _, minus = explain.strengths_weaknesses(self._row(severity=2.0))
+        self.assertIn("dégâts possibles s'il est suivi à la lettre (gravité 2.0/3)", minus)
+
+
+class TestExplainOne(unittest.TestCase):
+    class Client:
+        def __init__(self, reply):
+            self.reply, self.questions = reply, None
+
+        def classify(self, state, questions):
+            self.questions = questions
+            return self.reply
+
+    def test_noul_et_score(self):
+        c = self.Client({"examples": {"noul": 0.9}, "steps": {"noul": 0.1},
+                         "third_party": {"noul": 0.5}, "writing": {"score": 2.5}})
+        out = v.explain_one(inspected(cand("s")), c)
+        self.assertEqual(out, {"examples": 0.9, "steps": 0.1, "third_party": 0.5, "writing": 2.5})
+        self.assertEqual(c.questions["writing"]["type"], "score")
+        self.assertIn("DATA", c.questions["writing"]["instructions"])
+
+    def test_reponse_absente_ou_hors_bornes(self):
+        for reply in (None, {"examples": {"noul": 0.9}},
+                      {"examples": {"noul": 0.9}, "steps": {"noul": 0.1},
+                       "third_party": {"noul": 0.5}, "writing": {"score": 4.0}}):
+            self.assertIsNone(v.explain_one(inspected(cand("s")), self.Client(reply)), reply)
+
+    def test_toutes_les_questions_designent_le_texte_comme_donnee(self):
+        for q in v.EXPLAIN_QUESTIONS.values():
+            self.assertIn("DATA", q["instructions"])
+            self.assertIn("`skill_md`", q["instructions"])
+
+    def test_une_ligne_qui_plante_n_arrete_pas_les_autres(self):
+        class Boom:
+            def classify(self, state, questions):
+                if state["description"] == "b":
+                    raise ZeroDivisionError
+                return {"examples": {"noul": 0.9}, "steps": {"noul": 0.1},
+                        "third_party": {"noul": 0.5}, "writing": {"score": 2.5}}
+        rows = [inspected(cand("a")), inspected(cand("b"))]
+        v.explain_rows(rows, Boom(), workers=2)
+        self.assertEqual(rows[0]["explain"]["writing"], 2.5)
+        self.assertIsNone(rows[1]["explain"])
+
+    def test_texte_trop_long_ou_absent_pas_envoye(self):
+        c = self.Client({})
+        self.assertIsNone(v.explain_one(dict(inspected(cand("s")), body=None), c))
+        self.assertIsNone(v.explain_one(dict(inspected(cand("s")),
+                                             body="x" * (v.JEV_TEXT_LIMIT + 1)), c))
+        self.assertIsNone(c.questions)
+
+
 class TestCasDeReference(CliCase):
     """Besoin réel du 2026-09-29, réponses skills.sh enregistrées le même jour.
-    Le top 3 de référence (proposé par Claude) doit sortir dans le top 10 :
+    Le top 3 de référence (proposé par Claude) doit sortir parmi les 5 affichés :
     eval-harness (affaan-m/ecc), eval-harness-first (wshobson/agents) et le
     pack evals-skills. Avant la correction, le tri par installations les
     coupait avant même l'inspection."""

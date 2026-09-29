@@ -1,4 +1,4 @@
-import base64, contextlib, os, sys, tempfile, unittest
+import os, sys, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -44,35 +44,12 @@ class TestParseFrontmatter(unittest.TestCase):
         self.assertEqual(inspection.parse_frontmatter(text), {"name": "a", "description": "b"})
 
 
-class TestBlobBytes(unittest.TestCase):
+class TestBlobSha(unittest.TestCase):
     def setUp(self):
         self.cache = github.Cache(os.path.join(tempfile.mkdtemp(), "c.db"))
 
     def test_git_blob_sha(self):
         self.assertEqual(github.git_blob_sha(HELLO), HELLO_SHA)
-
-    def test_octets_verifies_et_mis_en_cache(self):
-        b64 = base64.b64encode(HELLO).decode()
-        raw = {"encoding": "base64", "content": b64[:4] + "\n" + b64[4:]}   # GitHub coupe les lignes
-        with patch("skillscout.github.gh_json", return_value=raw) as g:
-            self.assertEqual(github.fetch_blob_bytes("a/b", HELLO_SHA, self.cache), HELLO)
-            self.assertEqual(github.fetch_blob_bytes("a/b", HELLO_SHA, self.cache), HELLO)
-        self.assertEqual(g.call_count, 1)
-
-    def test_empreinte_differente_refusee_et_non_cachee(self):
-        raw = {"encoding": "base64", "content": base64.b64encode(b"autre\n").decode()}
-        with patch("skillscout.github.gh_json", return_value=raw) as g:
-            for _ in range(2):
-                with self.assertRaises(github.GhError):
-                    github.fetch_blob_bytes("a/b", HELLO_SHA, self.cache)
-        self.assertEqual(g.call_count, 2)
-
-    def test_encodage_ou_base64_invalide(self):
-        for raw in ({"encoding": "utf-8", "content": "hello\n"},
-                    {"encoding": "base64", "content": "abc"}):
-            with patch("skillscout.github.gh_json", return_value=raw):
-                with self.assertRaises(github.GhError):
-                    github.fetch_blob_bytes("a/b", HELLO_SHA, self.cache)
 
 
 class TestInspectionChampsNouveaux(unittest.TestCase):

@@ -1,6 +1,6 @@
 # skillscout
 
-> Trouver le bon skill pour Claude Code **sans installer n'importe quoi** — et, si vous le voulez, recevoir chaque semaine les meilleurs, déjà triés.
+> Trouver le bon skill pour Claude Code **sans installer n'importe quoi**.
 
 [![tests](https://github.com/gabriel-delavaud/skillscout/actions/workflows/tests.yml/badge.svg)](https://github.com/gabriel-delavaud/skillscout/actions/workflows/tests.yml)
 
@@ -36,7 +36,7 @@ Le problème : **un skill, ce sont des instructions que Claude va suivre avec vo
                                                           ce qui répond à votre besoin
 ```
 
-Tout se fait par lots de 25 candidats : tant que moins de 10 skills pertinents sont trouvés, skillscout examine le lot suivant, jusqu'à 75 candidats (`--limit`).
+Tout se fait par lots de 25 candidats : tant que moins de 10 skills pertinents sont trouvés, skillscout examine le lot suivant, jusqu'à 75 candidats (`--limit`). Il affiche ensuite **les 5 meilleurs**, chacun avec ses forces et ses faiblesses.
 
 **Point important : le premier tri (étapes 1 à 4) ne passe par aucune IA.** C'est du code, identique à chaque exécution, vérifiable ligne par ligne. Jev n'intervient qu'ensuite, sur les candidats restants : il peut en écarter d'autres, **jamais repêcher** un skill écarté. Le texte des skills lui est présenté comme une donnée à juger, jamais comme une consigne. Sans clé Jev, ou avec `--no-jev`, vous obtenez le classement déterministe seul.
 
@@ -58,7 +58,7 @@ Un éditeur est de confiance s'il est :
 
 Un skill **sans fichier exécutable** publié par un inconnu est **gardé**, mais son texte est lu quand même. Un skill est aussi du texte que Claude exécutera : ce texte peut demander tout ce qu'un script ferait. C'est pour ça que skillscout le lit.
 
-Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier par les règles ; ce même texte normalisé, jusqu'à 102 000 caractères, est envoyé à Jev — au-delà, le skill n'est pas jugé par Jev (affiché avec `⚠` en recherche, et jamais installé par la routine). Pour l'installation automatique, c'est plus strict : un fichier qui contient le moindre caractère invisible ou de contrôle (balises Unicode, sélecteurs de variante, contrôles de direction ou de terminal…) fait écarter le skill, car ces caractères peuvent cacher à vos yeux un texte que Claude, lui, lirait.
+Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier par les règles ; ce même texte normalisé, jusqu'à 102 000 caractères, est envoyé à Jev — au-delà, le skill n'est pas jugé par Jev.
 
 Le texte du `SKILL.md` est aussi fouillé pour des **motifs sensibles** qui, sans écarter le skill, le font descendre dans le classement et sont affichés : accès aux secrets (`~/.ssh`, `.env`, `credentials`), suppression récursive (`rm -rf`), envoi de données vers l'extérieur (`curl -d`, `POST`), et tentatives de manipuler l'IA (« ignore les instructions précédentes », « ne le dis pas à l'utilisateur »).
 
@@ -129,13 +129,13 @@ Puis **fermez et rouvrez votre Terminal**. (Si vous utilisez bash plutôt que zs
 
 ### Sous Windows
 
-Installez le paquet depuis le dossier cloné, avec le Python qui lancera la routine (n'importe quel Python ≥ 3.11 convient, `py -3.14` n'est qu'un exemple) :
+Installez le paquet depuis le dossier cloné (n'importe quel Python ≥ 3.11 convient, `py -3.14` n'est qu'un exemple) :
 
     git clone https://github.com/gabriel-delavaud/skillscout.git
     cd skillscout
     py -3.14 -m pip install --upgrade .
 
-`--upgrade` remplace une version plus ancienne déjà installée (par exemple la 0.2.0, qui tient dans un seul fichier `skillscout.py`) : sans cela, `py -3.14 -m skillscout` et la tâche planifiée pourraient lancer l'ancienne. La commande `skillscout` est ensuite disponible ; `py -3.14 -m skillscout …` revient au même.
+`--upgrade` remplace une version plus ancienne déjà installée (par exemple la 0.2.0, qui tient dans un seul fichier `skillscout.py`). La commande `skillscout` est ensuite disponible ; `py -3.14 -m skillscout …` revient au même.
 
 ### Vérifier que ça marche
 
@@ -178,73 +178,54 @@ skillscout "ce que vous voulez faire" -q "mots du domaine" -q "autres mots"
 ## Lire le résultat
 
 ```
-TOP 10 par pertinence (Jev) (3 écarté(s) sur 25 examiné(s), 0 ignoré(s))
+TOP 5 par pertinence (Jev) (4 écarté(s) sur 25 examiné(s), 0 ignoré(s))
 
- 1. eval-harness                 50.0  affaan-m/ecc@1a2b3c4            ✓ déjà installé · sans fichier exécutable · +2 variante(s)
-    besoin 2.9/3 · méta 2.1/3 — Formal evaluation framework for Claude Code sessions
- 2. eval-harness-first           80.0  wshobson/agents@5d6e7f8         ✓ déjà installé · éditeur en liste blanche · sans fichier exécutable
-    besoin 2.5/3 · méta 1.8/3 — Build the evaluation harness that gates every fine-tuning run
+ 1. eval-harness                         50.0  affaan-m/ecc@d3b8a3e
+    besoin 2.9/3 · méta 2.6/3 · substance 3.0/3 · écriture 2.8/3
+    Eval-driven development (EDD) framework for AI coding sessions — define capability and re…
+    + répond exactement au besoin (2.9/3)
+    + prompt bien écrit pour un LLM : précis et détaillé (2.8/3)
+    + donne des exemples concrets
+    + déjà installé chez vous
+    − éditeur non vérifié (confiance 50/100)
+    − 2 version(s) retouchée(s) publiée(s) ailleurs (--json)
+
+ 2. langsmith-evaluator                  40.1  langchain-ai/langsmith-skills@bc2f989
+    besoin 2.5/3 · méta 1.9/3 · substance 3.0/3 · écriture 2.9/3
+    INVOKE THIS SKILL when building evaluation pipelines for LangSmith. Covers three core com…
+    + organisation établie (365 jours ou plus, 10 dépôts d'origine ou plus, dépôt actif)
+    − ne sert qu'avec une plateforme, un service ou un compte précis
+    − le texte mentionne : téléchargement exécuté (curl/wget | sh)
 ```
 
-Avec Jev, seuls les skills qu'il juge pertinents pour votre besoin (au moins 1,5/3) sont affichés, du plus au moins pertinent ; s'il y en a moins de 10, l'en-tête l'annonce (« Seulement 4 skill(s) pertinent(s) trouvé(s) »). Sans Jev, l'ordre est celui de skills.sh : la confiance écarte, elle ne classe pas.
+Chaque skill tient dans un bloc, séparé du suivant par une ligne vide :
 
-Chaque ligne donne : le **nom du skill**, son **score de confiance**, le **dépôt** et l'**empreinte de l'arborescence** inspectée, et des **indicateurs** :
+1. le **nom**, le **score de confiance** (sur 100) et le **dépôt**, avec l'empreinte de l'arborescence inspectée ;
+2. les **notes de Jev**, sur 3 :
+   - **besoin** : à quel point le skill répond à votre phrase ;
+   - **méta** : s'il améliore aussi la façon de travailler de Claude en général ;
+   - **substance** : vraie méthode, ou coquille vide ;
+   - **écriture** : si le texte est bien écrit *pour un LLM* (précis, détaillé, dit quand s'en servir, avec étapes, contraintes et résultat attendu) ;
+3. la **description** du skill ;
+4. ses **forces** (`+`) et **faiblesses** (`−`).
 
-| Indicateur | Signification |
+Avec Jev, seuls les skills qu'il juge pertinents pour votre besoin (au moins 1,5/3) sont retenus, du plus au moins pertinent ; s'il y en a moins de 5, l'en-tête l'annonce (« Seulement 3 skill(s) pertinent(s) trouvé(s) »). Sans Jev, l'ordre est celui de skills.sh : la confiance écarte, elle ne classe pas.
+
+**Les forces et faiblesses ne sont rédigées par aucune IA.** Chaque phrase vient d'une règle fixe appliquée à ce que skillscout a mesuré : même mesure, même phrase. Elles viennent de trois sources :
+
+| Source | Exemples |
 |---|---|
-| `✓ déjà installé` | `~/.claude/skills/<nom>/SKILL.md` a exactement ce contenu (fins de ligne Windows comprises) |
-| `≈ autre version installée` | un skill de ce nom est installé, avec un autre contenu |
-| `+2 copie(s)` · `+3 variante(s)` | le même skill publié ailleurs, à l'identique (copie) ou retouché (fork, traduction) ; seule la version la plus sûre est affichée et jugée, `--json` liste les autres. Si Jev la rejette (danger ou hors sujet), la suivante est jugée à sa place, deux fois au plus |
-| `✓ variante installée (dépôt)` | ce que vous avez installé est l'une des autres versions du groupe |
-| `2 autre(s) version(s) écartée(s)` | des versions de ce skill ont été écartées : elles ne sont jamais proposées comme alternatives, `--show-excluded` dit pourquoi |
-| `éditeur en liste blanche` | publié par un éditeur reconnu |
-| `organisation : ≥365 j, ≥10 dépôts d'origine, dépôt actif` | organisation établie — ce sont des **faits mesurés**, pas une garantie |
-| `sans fichier exécutable` | aucun code exécutable dans le dossier du skill — un fait sur les fichiers, pas un brevet de sûreté |
-| `⚠ 3 fichiers exécutables` | contient du code, mais l'éditeur est de confiance |
-| `⚠ SKILL.md : …` | le texte du skill contient un motif sensible ; le skill est descendu dans le classement |
-| `⚠ SKILL.md non lu` | le texte n'a pas pu être récupéré : rien n'a été vérifié dessus (n'apparaît que chez un éditeur de confiance ; un inconnu est écarté) |
-| `⚠ 1 lien symbolique ou sous-module` | le dossier du skill contient une entrée dont le contenu n'a pas pu être inspecté (éditeur de confiance uniquement) |
-| `⚠ non maintenu depuis plus d'un an` | le dépôt semble abandonné |
-| `⚠ Jev : …` | Jev relève un risque (valeur de 0 à 1) sans atteindre le seuil d'exclusion |
-| `⚠ non jugé par Jev (…)` | sans Jev (clé absente ou panne) : le skill n'a pas été jugé ; quand Jev fonctionne, un skill qu'il n'a pas pu juger n'est pas affiché, et l'en-tête compte ces « non jugé(s) par Jev ». Si Jev tombe en panne en cours de route, la recherche s'arrête et l'annonce (« résultats partiels ») |
+| Notes de Jev | « répond exactement au besoin » (≥ 2,5/3), « ne répond qu'en partie » (< 2/3), « contenu mince » (substance < 1,5/3), « prompt bien écrit » (écriture ≥ 2,5/3) ou « mal écrit » (< 1,5/3), « dégâts possibles s'il est suivi à la lettre » (gravité ≥ 1,5/3) |
+| Quatre questions de plus à Jev (la note d'écriture et trois autres), posées aux 5 skills affichés seulement | « donne des exemples concrets », « étapes claires, dans l'ordre », « ne sert qu'avec une plateforme, un service ou un compte précis » (oui à partir de 0,6, non jusqu'à 0,25 ; entre les deux, rien n'est dit) |
+| Tri de confiance | éditeur reconnu ou non vérifié, fichiers exécutables, motifs sensibles relevés dans le texte (« le texte mentionne : … » : un motif relevé, pas une intention), risques relevés par Jev (« Jev y soupçonne : … »), maintenance, popularité (≥ 10 000 ou < 100 installations), déjà installé, autres versions publiées ailleurs |
+
+Sans Jev (`--no-jev`, ou clé absente, ou Jev en panne dès le départ), seules les mesures du tri de confiance sont utilisées. Si Jev tombe en panne en cours de route, les notes déjà obtenues restent, mais les quatre questions de plus ne sont pas posées.
 
 Pour installer le skill retenu, utilisez l'outil officiel :
 
 ```bash
 npx skills add etalab-ia/skills@securite-developpement
 ```
-
----
-
-## La routine hebdomadaire
-
-`skillscout routine` cherche seul, chaque semaine, les skills « méta » (méthode de travail, maîtrise de Claude Code, skills sur les skills) et les skills populaires qui servent **votre** pile, les juge, et **installe les meilleurs dans `~/.claude/skills`**, sans rien vous demander.
-
-Parce que personne ne relit avant installation, les critères sont plus stricts que pour la recherche :
-
-- tout le tri de sécurité ci-dessus, **plus** un seuil Jev bien plus bas : n'importe quel risque ≥ 0,20 écarte, ainsi qu'une gravité estimée ≥ 2 ;
-- **texte pur** : `SKILL.md` et fichiers `.md`/`.txt` seulement, aucun exécutable, même chez un éditeur de confiance ; **chaque fichier** est scanné et lu par Jev ;
-- au moins 100 installations sur skills.sh (sauf éditeur en liste blanche) ;
-- jamais d'écrasement : un nom déjà pris est sauté ;
-- **au plus 3 par semaine** ; les suivants attendent la semaine d'après ;
-- les fichiers écrits sont **exactement** ceux qui ont été jugés (vérifiés par leur empreinte Git).
-
-| Commande | Effet |
-|---|---|
-| `skillscout routine --dry-run` | tout, sauf l'installation : pour voir ce qu'elle ferait |
-| `skillscout routine --register` | crée la tâche Windows (lundi 10 h, rattrapée au démarrage si le PC était éteint) |
-| `skillscout routine --unregister` | supprime la tâche |
-| `skillscout installed` | liste ce que skillscout a installé |
-| `skillscout uninstall --last` | retire le dernier lot |
-| `skillscout uninstall NOM` | retire un skill installé par skillscout (et seulement ceux-là) |
-
-Pour la mettre en place sous Windows :
-
-1. installez skillscout depuis le dossier cloné avec `py -3.14 -m pip install --upgrade .` (voir « Sous Windows » plus haut) ; cela remplace l'ancienne 0.2.0 si elle est présente ;
-2. lancez `skillscout routine --dry-run` pour voir ce que la routine ferait ;
-3. lancez `skillscout routine --register` depuis **votre** terminal PowerShell, pas depuis l'app Claude. Avant de créer la tâche, `--register` vérifie la version de skillscout qu'elle lancera, et refuse si ce n'est pas celle que vous venez d'installer.
-
-Le rapport de chaque semaine est dans `~/.cache/skillscout/reports/` (par exemple `2026-W40.md`) : installés, en attente, écartés et pourquoi. Vos thèmes et votre pile se règlent dans `~/.config/skillscout/profile.toml`, créé au premier lancement. Un skill installé est pris en compte à la prochaine session de Claude.
 
 ---
 
@@ -260,17 +241,17 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 - **L'index de skills.sh prend parfois du retard.** Un skill peut y figurer sous un ancien nom alors qu'il a été renommé ; son `SKILL.md` est alors introuvable, et le skill est écarté si son éditeur n'est pas de confiance, même s'il est inoffensif.
 - **Certaines sources de skills.sh ne sont pas des dépôts GitHub** (par exemple `smithery.ai`). skillscout ne peut pas les vérifier : il les ignore et l'indique.
 - **Jev est un classifieur, il peut se tromper, et un texte peut chercher à le tromper.** C'est pour ça qu'il ne vient qu'après le tri déterministe et ne peut rien repêcher.
-- **L'installation automatique fait suivre à Claude des instructions que personne n'a relues.** Le plafond, le texte pur et le seuil strict réduisent le risque sans l'annuler : jetez un œil au rapport hebdomadaire, et `skillscout uninstall --last` défait tout le lot.
-- **Le classement favorise les skills populaires.** La pertinence de la recherche ne sert qu'à départager deux candidats à score égal. Un skill très pertinent mais peu installé peut ne pas apparaître.
+- **La pertinence, c'est l'avis de Jev.** Il juge chaque skill isolément : un pack de plusieurs skills complémentaires peut être moins bien noté qu'un skill unique qui colle mot pour mot au besoin.
+- **skillscout n'installe rien.** Il cherche, trie et explique ; l'installation reste votre décision, avec `npx skills add`. (La routine d'installation automatique des versions 2.0 et 2.1 a été retirée en 2.2.0.)
 
 ---
 
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **394 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
+- **294 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
-- Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
+- Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/cache.db` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 
 ---
 
