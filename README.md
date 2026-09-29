@@ -221,7 +221,36 @@ Avec Jev, seuls les skills qu'il juge pertinents pour votre besoin (au moins 1,5
 
 Sans Jev (`--no-jev`, ou clé absente, ou Jev en panne dès le départ), seules les mesures du tri de confiance sont utilisées. Si Jev tombe en panne en cours de route, les notes déjà obtenues restent, mais les quatre questions de plus ne sont pas posées.
 
-Pour installer le skill retenu, utilisez l'outil officiel :
+---
+
+## Installer depuis le top 5
+
+Dans un terminal, skillscout vous demande ensuite lesquels installer :
+
+```
+Lesquels installer ? (ex. 1,3 · « tout » · Entrée pour aucun) : 1,3
+✓ eval-harness : installé depuis affaan-m/ecc.
+✗ evals-start : un skill « evals-start » installé sans npx skills (écrit ou cloné à la main) existe déjà ; il n'est jamais remplacé.
+```
+
+Votre choix vaut confirmation : chaque skill choisi est installé avec l'outil officiel, pour Claude Code seulement (`npx skills add <dépôt> --skill <nom> -g -a claude-code -y`). La question n'est jamais posée avec `--json` ni quand l'entrée ou la sortie est redirigée. Il faut Node.js (`npx`).
+
+Quatre garde-fous :
+
+- **Ce qui est installé est ce qui a été inspecté.** `npx skills add` prend la version du moment ; si le `SKILL.md` installé n'a pas l'empreinte de celui que skillscout a lu (le dépôt a changé entre-temps), il est aussitôt désinstallé et vous êtes prévenu. Un skill dont le `SKILL.md` n'a pas pu être lu n'est pas installé automatiquement.
+- **Un skill déjà installé à l'identique** est laissé tel quel.
+- **Un skill que vous avez écrit ou cloné vous-même n'est jamais remplacé** par un skill du même nom : skillscout ne remplace que ce que `npx skills` a lui-même installé (d'après son registre `~/.agents/.skill-lock.json`).
+- **Une autre version installée par `npx skills`** n'est remplacée qu'après un `o` à la question « Le remplacer ? [o/N] ».
+
+### Une commande après installation
+
+Si la variable d'environnement `SKILLSCOUT_APRES_INSTALLATION` contient une commande, skillscout la lance une fois les skills installés, par exemple pour mettre à jour un catalogue personnel et le pousser sur GitHub :
+
+    [Environment]::SetEnvironmentVariable('SKILLSCOUT_APRES_INSTALLATION', 'py -3 C:\chemin\vers\sync.py', 'User')
+
+Sa sortie s'affiche directement. Si elle échoue, les skills restent installés : relancez-la vous-même une fois le problème réglé. Sans cette variable, skillscout rappelle seulement de mettre votre catalogue à jour.
+
+Pour installer à la main un skill vu dans le résultat, l'outil officiel suffit :
 
 ```bash
 npx skills add etalab-ia/skills@securite-developpement
@@ -236,13 +265,13 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 - **Il juge la provenance et la surface, pas l'intention.** Il relève des motifs précis dans le texte ; il ne comprend pas ce que le skill veut faire. Un éditeur fiable peut publier un skill médiocre ; un inconnu, un excellent. Lisez toujours le `SKILL.md` avant d'installer — c'est du texte, ça prend deux minutes.
 - **Une organisation GitHub se crée en trente secondes.** Les quatre conditions rendent l'attaque plus coûteuse, pas impossible.
 - **Le motif qu'on ne cherche pas n'est pas trouvé.** La liste des motifs est courte, lisible, et volontairement sans ambition sémantique.
-- **`npx skills add` installe la branche du moment**, pas l'empreinte inspectée. Si le dépôt a reçu un push entre les deux, ce que vous installez peut différer de ce qui a été évalué. Comparez le `@sha` affiché avec l'état du dépôt en cas de doute.
+- **`npx skills add` installe la branche du moment**, pas l'empreinte inspectée. Depuis le top 5, skillscout vérifie l'empreinte du `SKILL.md` installé et désinstalle en cas d'écart ; les autres fichiers du dossier ne sont pas revérifiés. À la main, comparez le `@sha` affiché avec l'état du dépôt en cas de doute.
 - **La liste blanche est maintenue à la main.**
 - **L'index de skills.sh prend parfois du retard.** Un skill peut y figurer sous un ancien nom alors qu'il a été renommé ; son `SKILL.md` est alors introuvable, et le skill est écarté si son éditeur n'est pas de confiance, même s'il est inoffensif.
 - **Certaines sources de skills.sh ne sont pas des dépôts GitHub** (par exemple `smithery.ai`). skillscout ne peut pas les vérifier : il les ignore et l'indique.
 - **Jev est un classifieur, il peut se tromper, et un texte peut chercher à le tromper.** C'est pour ça qu'il ne vient qu'après le tri déterministe et ne peut rien repêcher.
 - **La pertinence, c'est l'avis de Jev.** Il juge chaque skill isolément : un pack de plusieurs skills complémentaires peut être moins bien noté qu'un skill unique qui colle mot pour mot au besoin.
-- **skillscout n'installe rien.** Il cherche, trie et explique ; l'installation reste votre décision, avec `npx skills add`. (La routine d'installation automatique des versions 2.0 et 2.1 a été retirée en 2.2.0.)
+- **skillscout n'installe que ce que vous choisissez**, dans le top 5 qu'il vient d'afficher. (La routine d'installation automatique des versions 2.0 et 2.1, qui installait sans demander, a été retirée en 2.2.0.)
 
 ---
 
