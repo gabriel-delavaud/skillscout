@@ -194,7 +194,9 @@ Chaque ligne donne : le **nom du skill**, son **score de confiance**, le **dép�
 |---|---|
 | `✓ déjà installé` | `~/.claude/skills/<nom>/SKILL.md` a exactement ce contenu (fins de ligne Windows comprises) |
 | `≈ autre version installée` | un skill de ce nom est installé, avec un autre contenu |
-| `+2 copie(s)` · `+3 variante(s)` | le même skill publié ailleurs, à l'identique (copie) ou retouché (fork, traduction) ; seule la version la plus sûre est affichée et jugée, `--json` liste les autres |
+| `+2 copie(s)` · `+3 variante(s)` | le même skill publié ailleurs, à l'identique (copie) ou retouché (fork, traduction) ; seule la version la plus sûre est affichée et jugée, `--json` liste les autres. Si Jev la rejette (danger ou hors sujet), la suivante est jugée à sa place, deux fois au plus |
+| `✓ variante installée (dépôt)` | ce que vous avez installé est l'une des autres versions du groupe |
+| `2 autre(s) version(s) écartée(s)` | des versions de ce skill ont été écartées : elles ne sont jamais proposées comme alternatives, `--show-excluded` dit pourquoi |
 | `éditeur en liste blanche` | publié par un éditeur reconnu |
 | `organisation : ≥365 j, ≥10 dépôts d'origine, dépôt actif` | organisation établie — ce sont des **faits mesurés**, pas une garantie |
 | `sans fichier exécutable` | aucun code exécutable dans le dossier du skill — un fait sur les fichiers, pas un brevet de sûreté |
@@ -204,7 +206,7 @@ Chaque ligne donne : le **nom du skill**, son **score de confiance**, le **dép�
 | `⚠ 1 lien symbolique ou sous-module` | le dossier du skill contient une entrée dont le contenu n'a pas pu être inspecté (éditeur de confiance uniquement) |
 | `⚠ non maintenu depuis plus d'un an` | le dépôt semble abandonné |
 | `⚠ Jev : …` | Jev relève un risque (valeur de 0 à 1) sans atteindre le seuil d'exclusion |
-| `⚠ non jugé par Jev (…)` | sans Jev (clé absente ou panne) : le skill n'a pas été jugé ; quand Jev fonctionne, un skill qu'il n'a pas pu juger n'est pas affiché |
+| `⚠ non jugé par Jev (…)` | sans Jev (clé absente ou panne) : le skill n'a pas été jugé ; quand Jev fonctionne, un skill qu'il n'a pas pu juger n'est pas affiché, et l'en-tête compte ces « non jugé(s) par Jev ». Si Jev tombe en panne en cours de route, la recherche s'arrête et l'annonce (« résultats partiels ») |
 
 Pour installer le skill retenu, utilisez l'outil officiel :
 
@@ -266,7 +268,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **349 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
+- **394 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
 - Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 

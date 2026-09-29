@@ -161,7 +161,7 @@ def local_status(row: dict, skills_dir: Path) -> str | None:
     if row.get("skill_md_sha"):
         shas.add(row["skill_md_sha"])
     found = False
-    for name in dict.fromkeys(n for n in (row.get("skill_id"), row.get("md_name")) if n):
+    for name in dict.fromkeys(n.lower() for n in (row.get("skill_id"), row.get("md_name")) if n):
         if not is_safe_name(name):        # vient de skills.sh : jamais un chemin
             continue
         folder = skills_dir / name

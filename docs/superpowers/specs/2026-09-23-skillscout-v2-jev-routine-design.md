@@ -451,9 +451,20 @@ prises avec l'utilisateur (séance de questions du 2026-09-29) :
   (fork, traduction). Choix initial « même empreinte seulement », révisé par
   l'utilisateur après le banc en direct : les forks retouchés occupaient 5 à 8 des
   10 places.
+- Relecture de la branche : les versions d'un groupe restent entières
+  (`_members`), avec leur exclusion. Une version écartée n'est jamais comptée comme
+  copie ou variante (`excluded_versions`, comptée dans « écarté(s) » et listée par
+  `--show-excluded`). Quand Jev rejette la version gardée (danger ou besoin
+  < 1,5), la suivante la plus sûre, non écartée et de contenu différent, est jugée à
+  sa place (`rank.promote`, au plus `MAX_PROMOTIONS` = 2 fois par nom), quel que soit
+  le lot où elle arrive. `group_rank` porte le meilleur rang du groupe sans écraser
+  `relevance_rank`. Une panne de Jev après un premier lot réussi arrête la recherche
+  (« Jev indisponible à partir du lot N — résultats partiels ») ; les non-jugés sont
+  comptés dans l'en-tête. Le frontmatter vient du SKILL.md principal.
 - « ✓ déjà installé » quand `~/.claude/skills/<nom>/SKILL.md` a l'empreinte de l'un
   des SKILL.md du skill (un dépôt comme affaan-m/ecc en contient 9 : original et
   traductions), fins de ligne CRLF ramenées à LF (`npx skills` sous Windows) ;
+  « ✓ variante installée » si c'est une autre version du groupe ;
   « ≈ autre version installée » si le nom existe avec un autre contenu.
 - Le SKILL.md principal (`skill_md_path`) est le moins profond, et non plus le
   premier par ordre alphabétique (`.agents/skills/x/` passait devant `skills/x/`).

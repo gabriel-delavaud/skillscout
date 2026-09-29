@@ -73,6 +73,31 @@ class TestSearchMany(unittest.TestCase):
                 sources.search_many(["a", "b"])
 
 
+class ScriptedJev:
+    """Jev factice : réponses par description ; None simule une panne (HTTP 429)."""
+    def __init__(self, by_description, fail_after=None):
+        self.by_description = by_description
+        self.fail_after = fail_after
+        self.last_error = ""
+        self.calls = 0
+        self._lock = threading.Lock()
+
+    def classify(self, state, questions):
+        with self._lock:
+            self.calls += 1
+            calls = self.calls
+        if self.fail_after is not None and calls > self.fail_after:
+            self.last_error = "HTTP 429"
+            return None
+        return self.by_description(state["description"])
+
+
+def described(c, desc, **kw):
+    """Ligne inspectée dont la description (et donc la réponse de Jev) est `desc`."""
+    body = f"---\nname: {c['skill_id']}\ndescription: {desc}\n---\n# {c['source']}\n"
+    return dict(inspected(c, content=body, **kw), description=desc)
+
+
 class TestCopies(unittest.TestCase):
     def test_meme_nom_meme_contenu_regroupes_la_plus_sure_reste(self):
         rows = []
@@ -82,9 +107,11 @@ class TestCopies(unittest.TestCase):
         added = rank.add_deduplicated(rows, new)
         self.assertEqual(len(added), 2)
         kept = next(r for r in rows if r["skill_id"] == "s")
+        rank.describe_group(kept)
         self.assertEqual(kept["source"], "orig/b")
         self.assertEqual(kept["copies"], ["fork/a"])
-        self.assertEqual(kept["relevance_rank"], 0)      # meilleur rang du groupe
+        self.assertEqual(kept["group_rank"], 0)          # meilleur rang du groupe…
+        self.assertEqual(kept["relevance_rank"], 5)      # … sans écraser le sien
 
     def test_meme_nom_contenu_different_variante(self):
         # Forks retouchés et traductions : une seule ligne, les autres en variantes.
@@ -94,6 +121,7 @@ class TestCopies(unittest.TestCase):
                                              inspected(cand("s", "c/c"))])
         self.assertEqual(len(rows), 1)
         self.assertEqual(added, rows)
+        rank.describe_group(rows[0])
         self.assertEqual(rows[0]["source"], "a/a")
         self.assertEqual(rows[0]["variants"], ["b/b"])
         self.assertEqual(rows[0]["copies"], ["c/c"])
@@ -103,14 +131,19 @@ class TestCopies(unittest.TestCase):
         rank.add_deduplicated(rows, [inspected(cand("s", "a/a")), inspected(cand("t", "a/a"))])
         self.assertEqual(len(rows), 2)
 
-    def test_remplacement_reclasse_copies_et_variantes(self):
+    def test_versions_ecartees_jamais_presentees_comme_alternatives(self):
+        # Revue : un fork écarté restait affiché « +1 copie ».
         rows = []
         rank.add_deduplicated(rows, [inspected(cand("s", "perso/a"), excluded=True),
-                                     inspected(cand("s", "perso/b"), excluded=True)])
-        rank.add_deduplicated(rows, [inspected(cand("s", "org/c"), content="# autre\n")])
+                                     inspected(cand("s", "perso/b"), excluded=True,
+                                               content="# autre\n")])
+        rank.add_deduplicated(rows, [inspected(cand("s", "org/c"))])
+        rank.describe_group(rows[0])
         self.assertEqual(rows[0]["source"], "org/c")
-        self.assertEqual(sorted(rows[0]["variants"]), ["perso/a", "perso/b"])
-        self.assertEqual(rows[0]["copies"], [])
+        self.assertEqual((rows[0]["copies"], rows[0]["variants"]), ([], []))
+        self.assertEqual(sorted(v["source"] for v in rows[0]["excluded_versions"]),
+                         ["perso/a", "perso/b"])
+        self.assertEqual(sum(1 for r in rank.members(rows) if r["excluded"]), 2)
 
     def test_copie_d_un_lot_suivant_pas_rejugee(self):
         rows = []
@@ -118,6 +151,7 @@ class TestCopies(unittest.TestCase):
         rows[0]["jev"] = "déjà jugé"
         added = rank.add_deduplicated(rows, [inspected(cand("s", "b/b"))])
         self.assertEqual(added, [])
+        rank.describe_group(rows[0])
         self.assertEqual(rows[0]["copies"], ["b/b"])
 
     def test_copie_sure_remplace_une_copie_ecartee(self):
@@ -126,7 +160,56 @@ class TestCopies(unittest.TestCase):
         added = rank.add_deduplicated(rows, [inspected(cand("s", "org/b"))])
         self.assertEqual([r["source"] for r in rows], ["org/b"])
         self.assertEqual(added, rows)
-        self.assertEqual(rows[0]["copies"], ["perso/a"])
+        rank.describe_group(rows[0])
+        self.assertEqual(rows[0]["excluded_versions"][0]["source"], "perso/a")
+
+
+class TestPromotion(unittest.TestCase):
+    def _judged(self, row, need, excluded=False):
+        row["jev"] = v.Judgement("ok", {k: 0.0 for k in v.DANGERS}, 0.0,
+                                 {"need": need, "meta": 1.0, "substance": 3.0})
+        row["excluded"] = excluded
+        return row
+
+    def test_version_rejetee_remplacee_par_la_suivante(self):
+        rows = []
+        rank.add_deduplicated(rows, [described(cand("s", "gros/a"), "a", score=95.0),
+                                     described(cand("s", "petit/b"), "b", score=40.0)])
+        self._judged(rows[0], 0.0)                       # jugée hors sujet
+        promoted = rank.promote(rows)
+        self.assertEqual([r["source"] for r in promoted], ["petit/b"])
+        self.assertIs(rows[0], promoted[0])
+
+    def test_copie_identique_d_une_version_jugee_pas_promue(self):
+        rows = []
+        rank.add_deduplicated(rows, [inspected(cand("s", "gros/a"), score=95.0),
+                                     inspected(cand("s", "copie/b"), score=40.0)])
+        self._judged(rows[0], 0.0)
+        self.assertEqual(rank.promote(rows), [])
+
+    def test_au_plus_max_promotions_par_nom(self):
+        rows = []
+        rank.add_deduplicated(rows, [described(cand("s", f"o/{i}"), f"d{i}", score=90.0 - i)
+                                     for i in range(5)])
+        promoted = 0
+        while True:
+            for r in rows:
+                if "jev" not in r:
+                    self._judged(r, 0.0)
+            batch = rank.promote(rows)
+            if not batch:
+                break
+            promoted += len(batch)
+        self.assertEqual(promoted, rank.MAX_PROMOTIONS)
+
+    def test_ligne_pertinente_ou_non_jugee_pas_remplacee(self):
+        rows = []
+        rank.add_deduplicated(rows, [described(cand("s", "a/a"), "a", score=90.0),
+                                     described(cand("s", "b/b"), "b")])
+        self._judged(rows[0], 3.0)
+        self.assertEqual(rank.promote(rows), [])
+        rows[0]["jev"] = v.unjudged("HTTP 500")
+        self.assertEqual(rank.promote(rows), [])
 
 
 class TestLocalStatus(unittest.TestCase):
@@ -305,6 +388,85 @@ class TestCliLots(CliCase):
         self.assertIn("orig/b", out)
         self.assertNotIn("fork/a", out)
         self.assertIn("+1 variante(s)", out)
+
+
+class TestCliRevue(CliCase):
+    """Défauts relevés par la relecture de la branche (2026-09-29)."""
+    EVIL = answers(3.0)
+    EVIL["exfiltration"] = {"noul": 0.95}
+
+    def test_version_dangereuse_ne_cache_pas_la_version_saine(self):
+        cands = [cand("s", "gros/evil", rank_=0), cand("s", "petit/good", rank_=1)]
+        jev = ScriptedJev(lambda d: self.EVIL if d == "evil" else answers(3.0))
+        code, out, _ = self.run_cli(
+            ["x", "--show-excluded"], cands, jev,
+            inspect=lambda c: described(c, c["source"].split("/")[1],
+                                        score=95.0 if "gros" in c["source"] else 40.0))
+        self.assertEqual(code, 0)
+        self.assertEqual(jev.calls, 2)
+        self.assertIn("petit/good", out)
+        self.assertIn("1 autre(s) version(s) écartée(s)", out)
+        self.assertIn("1 écarté(s) sur 2 examiné(s)", out)
+        self.assertIn("exfiltration", out.split("Écartés")[1])
+
+    def test_version_hors_sujet_laisse_place_a_la_suivante(self):
+        cands = [cand("s", "gros/off", rank_=0), cand("s", "petit/good", rank_=1)]
+        jev = ScriptedJev(lambda d: answers(0.0 if d == "off" else 3.0))
+        code, out, _ = self.run_cli(
+            ["x"], cands, jev,
+            inspect=lambda c: described(c, c["source"].split("/")[1],
+                                        score=95.0 if "gros" in c["source"] else 40.0))
+        self.assertEqual(code, 0)
+        self.assertIn("petit/good", out)
+        self.assertIn("+1 variante(s)", out)            # la version hors sujet reste citée
+
+    def test_forks_ecartes_comptes_et_listes(self):
+        cands = [cand("s", f"perso/f{i}", rank_=i) for i in range(5)] + \
+                [cand("s", "org/orig", rank_=5)]
+        code, out, _ = self.run_cli(
+            ["x", "--show-excluded"], cands, NeedJev(lambda d: 3.0),
+            inspect=lambda c: inspected(c, excluded=c["source"].startswith("perso/")))
+        self.assertEqual(code, 0)
+        self.assertIn("5 écarté(s) sur 6 examiné(s)", out)
+        self.assertNotIn("copie(s)", out)
+        self.assertIn("5 autre(s) version(s) écartée(s)", out)
+        self.assertEqual(out.split("Écartés (5)")[1].count("perso/f"), 5)
+
+    def test_panne_de_jev_au_deuxieme_lot_signalee_et_arretee(self):
+        many = [cand(f"s{i:02}", f"org/r{i:02}", rank_=i) for i in range(80)]
+        jev = ScriptedJev(lambda d: answers(3.0 if d == "s00" else 0.0),
+                          fail_after=config.SEARCH_BATCH)
+        code, out, err = self.run_cli(["x", "-q", "q"], many, jev)
+        self.assertEqual(code, 0)
+        self.assertIn("Jev indisponible à partir du lot 2 (HTTP 429)", err)
+        self.assertIn("résultats partiels", err)
+        self.assertEqual(len(self.inspected), 2 * config.SEARCH_BATCH)   # pas de lot 3
+        self.assertEqual(jev.calls, 2 * config.SEARCH_BATCH)
+
+    def test_non_juges_comptes_dans_l_en_tete(self):
+        cands = [cand("a", rank_=0), cand("b", rank_=1)]
+        jev = ScriptedJev(lambda d: answers(3.0) if d == "a" else None)
+        code, out, _ = self.run_cli(["x", "-q", "q"], cands, jev)
+        self.assertEqual(code, 0)
+        self.assertIn("1 non jugé(s) par Jev", out)
+
+    def test_variante_installee_reconnue(self):
+        cands = [cand("s", "org/a", rank_=0), cand("s", "org/b", rank_=1)]
+        rows = {c["source"]: described(c, c["source"], score=90.0 if c["source"] == "org/a"
+                                       else 50.0) for c in cands}
+        (self.paths.skills_dir / "s").mkdir()
+        (self.paths.skills_dir / "s" / "SKILL.md").write_bytes(rows["org/b"]["body"].encode())
+        code, out, _ = self.run_cli(["x"], cands, NeedJev(lambda d: 3.0),
+                                    inspect=lambda c: rows[c["source"]])
+        self.assertEqual(code, 0)
+        self.assertIn("✓ variante installée (org/b)", out)
+
+    def test_aucun_candidat_inspecte(self):
+        def boom(c):
+            raise github.GhError("403")
+        code, _, err = self.run_cli(["x"], [cand("a")], NeedJev(lambda d: 3.0), inspect=boom)
+        self.assertEqual(code, 1)
+        self.assertIn("Aucun candidat n'a pu être inspecté (1 ignoré(s))", err)
 
 
 class TestCasDeReference(CliCase):

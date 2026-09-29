@@ -76,16 +76,27 @@ def _mark_local(rows: list[dict]) -> None:
     skills_dir = config.default_paths().skills_dir
     for r in rows:
         status = install.local_status(r, skills_dir)
+        via = None
+        if status == "other":     # l'installé est peut-être une autre version du groupe
+            via = next((m["source"] for m in r.get("_members", ())
+                        if not m["excluded"] and install.local_status(m, skills_dir) == "same"),
+                       None)
+            if via:
+                status = "variant"
         r["installed"] = status
         flags = list(r.get("flags", []))
         if status == "same":
             flags.insert(0, "✓ déjà installé")
+        elif status == "variant":
+            flags.insert(0, f"✓ variante installée ({via})")
         elif status == "other":
             flags.insert(0, "≈ autre version installée")
         if r.get("copies"):
             flags.append(f"+{len(r['copies'])} copie(s)")
         if r.get("variants"):
             flags.append(f"+{len(r['variants'])} variante(s)")
+        if r.get("excluded_versions"):
+            flags.append(f"{len(r['excluded_versions'])} autre(s) version(s) écartée(s)")
         r["flags"] = flags
 
 
@@ -144,27 +155,39 @@ def _main_search(argv: list[str]) -> int:
     # TOP_N skills à montrer (pertinents selon Jev, ou simplement non écartés
     # sans Jev) ou atteindre le plafond.
     rows: list[dict] = []
-    ignored, skipped, examined, pos = [], [], 0, 0
+    ignored, skipped, examined, pos, batch_no = [], [], 0, 0, 0
     ceiling = min(args.limit, len(candidates))
     while pos < ceiling:
         batch = candidates[pos:min(pos + config.SEARCH_BATCH, ceiling)]
         pos += len(batch)
+        batch_no += 1
         evaluated, ign, skp = _inspect_batch(batch, cache, now, progress)
         ignored += ign
         skipped += skp
         examined += len(evaluated)
-        new = rank.add_deduplicated(rows, evaluated)
-        if use_jev and new:
-            verdict.judge_rows(new, client, "manual", need=args.besoin)
-            judged = [r for r in new if "jev" in r]
-            if judged and not jev_ok and not any(r["jev"].status == "ok" for r in judged):
-                banner = f"Jev indisponible ({judged[0]['jev'].note}) — classement déterministe seul."
-                for r in rows:
-                    r.pop("jev", None)
-                use_jev = False
-            else:
-                jev_ok = jev_ok or any(r["jev"].status == "ok" for r in judged)
-                verdict.apply_manual(new)
+        todo = rank.add_deduplicated(rows, evaluated)
+        outage = False
+        while use_jev and todo:
+            verdict.judge_rows(todo, client, "manual", need=args.besoin)
+            judged = [r for r in todo if "jev" in r]
+            if judged and not any(r["jev"].status == "ok" for r in judged):
+                note = judged[0]["jev"].note
+                if not jev_ok:        # Jev n'a encore jamais répondu : repli déterministe
+                    banner = f"Jev indisponible ({note}) — classement déterministe seul."
+                    for r in rank.members(rows):
+                        r.pop("jev", None)
+                    use_jev = False
+                else:                 # panne en cours de route : on s'arrête là
+                    banner = (f"Jev indisponible à partir du lot {batch_no} ({note}) — "
+                              "résultats partiels.")
+                    outage = True
+                break
+            jev_ok = jev_ok or bool(judged)
+            verdict.apply_manual(todo)
+            # Une version rejetée par Jev laisse sa place à la suivante du groupe.
+            todo = rank.promote(rows)
+        if outage:
+            break
         shown = [r for r in rows if (rank.is_relevant(r) if use_jev else not r["excluded"])]
         if len(shown) >= config.TOP_N:
             break
@@ -175,12 +198,18 @@ def _main_search(argv: list[str]) -> int:
         for r in rows:
             if "jev" in r:
                 r["relevance"] = verdict.relevance_line(r["jev"], "manual")
-    excluded_rows = [r for r in rows if r["excluded"]]
+    excluded_rows = [r for r in rank.members(rows) if r["excluded"]]
+    unjudged = sum(1 for r in rows if use_jev and not r["excluded"]
+                   and "jev" in r and r["jev"].status != "ok")
     top = (rank.rank_with_jev if use_jev else rank.rank)(rows, top=config.TOP_N)
     hint = use_jev and not args.query and len(top) < 3
     if not top:
-        if use_jev and not all(r["excluded"] for r in rows):
-            print(f"Aucun skill pertinent parmi les {examined} candidat(s) examiné(s).",
+        if examined == 0:
+            print(f"Aucun candidat n'a pu être inspecté ({len(ignored) + len(skipped)} "
+                  "ignoré(s)).", file=sys.stderr)
+        elif use_jev and not all(r["excluded"] for r in rows):
+            print(f"Aucun skill pertinent parmi les {examined} candidat(s) examiné(s)"
+                  + (f" ({unjudged} non jugé(s) par Jev)." if unjudged else "."),
                   file=sys.stderr)
         else:
             print(f"Les {examined} candidat(s) examiné(s) ont tous été écartés.",
@@ -190,17 +219,20 @@ def _main_search(argv: list[str]) -> int:
         if args.show_excluded and excluded_rows:
             print(format_excluded(excluded_rows), file=sys.stderr)
         return 1
+    for r in top:
+        rank.describe_group(r)
     _mark_local(top)
 
     if args.json:
-        hide = {"body", "paths", "skill_files", "_members"}
+        hide = {"body", "paths", "skill_files", "_members", "_tries"}
         print(json.dumps([{k: (asdict(v) if k == "jev" else v)
                            for k, v in r.items() if k not in hide}
                           for r in top], ensure_ascii=False, indent=2))
         return 0
 
     counts = (f"{len(excluded_rows)} écarté(s) sur {examined} examiné(s), "
-              f"{len(ignored) + len(skipped)} ignoré(s)")
+              f"{len(ignored) + len(skipped)} ignoré(s)"
+              + (f", {unjudged} non jugé(s) par Jev" if unjudged else ""))
     if use_jev and len(top) < config.TOP_N:
         print(f"\nSeulement {len(top)} skill(s) pertinent(s) trouvé(s) ({counts})\n")
     elif use_jev:
