@@ -232,8 +232,11 @@ def _main_search(argv: list[str]) -> int:
     for r in top:
         rank.describe_group(r)
     _mark_local(top)
-    if use_jev and not outage:
-        verdict.explain_rows(top, client)      # 3 questions de plus, aux seuls skills affichés
+    if use_jev and not outage and top:
+        verdict.explain_rows(top, client)      # 4 questions de plus, aux seuls skills affichés
+        if all(r["explain"] is None for r in top):
+            print("Explications de Jev non reçues : forces et faiblesses tirées des mesures "
+                  "seules, sans note d'écriture.", file=sys.stderr)
     for r in top:
         writing = (r.get("explain") or {}).get("writing")
         if writing is not None and r.get("relevance"):
@@ -279,7 +282,8 @@ def main(argv: list[str]) -> int:
     if argv and argv[0] in _REMOVED:
         print(f"skillscout {argv[0]} a été retiré en 2.2.0 avec la routine d'installation "
               "automatique : cherchez avec skillscout \"besoin\", puis installez avec "
-              "npx skills add.", file=sys.stderr)
+              f"npx skills add. (Pour chercher le mot lui-même : skillscout search "
+              f"\"{argv[0]}\".)", file=sys.stderr)
         return 2
     if argv and argv[0] == "search":
         argv = argv[1:]

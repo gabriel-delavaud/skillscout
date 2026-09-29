@@ -193,9 +193,9 @@ TOP 5 par pertinence (Jev) (4 écarté(s) sur 25 examiné(s), 0 ignoré(s))
  2. langsmith-evaluator                  40.1  langchain-ai/langsmith-skills@bc2f989
     besoin 2.5/3 · méta 1.9/3 · substance 3.0/3 · écriture 2.9/3
     INVOKE THIS SKILL when building evaluation pipelines for LangSmith. Covers three core com…
-    + organisation établie (plus d'un an, 10 dépôts ou plus, active)
+    + organisation établie (365 jours ou plus, 10 dépôts d'origine ou plus, dépôt actif)
     − ne sert qu'avec une plateforme, un service ou un compte précis
-    − le texte demande : téléchargement exécuté (curl/wget | sh)
+    − le texte mentionne : téléchargement exécuté (curl/wget | sh)
 ```
 
 Chaque skill tient dans un bloc, séparé du suivant par une ligne vide :
@@ -216,10 +216,10 @@ Avec Jev, seuls les skills qu'il juge pertinents pour votre besoin (au moins 1,5
 | Source | Exemples |
 |---|---|
 | Notes de Jev | « répond exactement au besoin » (≥ 2,5/3), « ne répond qu'en partie » (< 2/3), « contenu mince » (substance < 1,5/3), « prompt bien écrit » (écriture ≥ 2,5/3) ou « mal écrit » (< 1,5/3), « dégâts possibles s'il est suivi à la lettre » (gravité ≥ 1,5/3) |
-| Trois questions de plus à Jev, posées aux 5 skills affichés seulement | « donne des exemples concrets », « étapes claires, dans l'ordre », « ne sert qu'avec une plateforme, un service ou un compte précis » (oui au-delà de 0,6, non en deçà de 0,25 ; entre les deux, rien n'est dit) |
-| Tri de confiance | éditeur reconnu ou non vérifié, fichiers exécutables, motifs sensibles dans le texte (« le texte demande : … »), risques relevés par Jev (« Jev y soupçonne : … »), maintenance, popularité (≥ 10 000 ou < 100 installations), déjà installé, autres versions publiées ailleurs |
+| Quatre questions de plus à Jev (la note d'écriture et trois autres), posées aux 5 skills affichés seulement | « donne des exemples concrets », « étapes claires, dans l'ordre », « ne sert qu'avec une plateforme, un service ou un compte précis » (oui à partir de 0,6, non jusqu'à 0,25 ; entre les deux, rien n'est dit) |
+| Tri de confiance | éditeur reconnu ou non vérifié, fichiers exécutables, motifs sensibles relevés dans le texte (« le texte mentionne : … » : un motif relevé, pas une intention), risques relevés par Jev (« Jev y soupçonne : … »), maintenance, popularité (≥ 10 000 ou < 100 installations), déjà installé, autres versions publiées ailleurs |
 
-Sans Jev (`--no-jev`, clé absente ou panne), seules les mesures du tri de confiance sont utilisées.
+Sans Jev (`--no-jev`, ou clé absente, ou Jev en panne dès le départ), seules les mesures du tri de confiance sont utilisées. Si Jev tombe en panne en cours de route, les notes déjà obtenues restent, mais les quatre questions de plus ne sont pas posées.
 
 Pour installer le skill retenu, utilisez l'outil officiel :
 
@@ -249,7 +249,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **287 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
+- **294 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
 - Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/cache.db` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 

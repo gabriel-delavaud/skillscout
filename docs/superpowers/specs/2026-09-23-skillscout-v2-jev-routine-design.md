@@ -511,7 +511,7 @@ avec pour chacun ses forces et faiblesses, en gardant ses notes. Choix faits :
   ajouté à la demande de l'utilisateur). La note d'écriture s'affiche avec les
   autres (« écriture x/3 ») mais ne change pas le classement. Les seuils portent
   sur la note arrondie au dixième, celle qui est affichée. Aucune phrase n'est
-  rédigée par un modèle ; une réponse d'explication incomplète ne dit rien.
+  rédigée par un modèle ; une réponse d'explication incomplète ne dit rien. Relecture : un motif relevé par le scan se dit « le texte mentionne », jamais « demande » (un texte défensif le déclenche aussi) ; « sans fichier exécutable » reste un fait sur l'arborescence ; si aucune explication ne revient, un message le dit.
 - Pas d'explication Jev sans Jev, ni après une panne : les mesures seules restent.
 
 ## Limites connues

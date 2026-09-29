@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 
-from . import rank
+from . import rank, trust
 
 POPULAR = 10_000    # installations au-delà desquelles un skill est « très utilisé »
 OBSCURE = 100       # … en deçà desquelles il est « peu utilisé »
@@ -21,9 +21,11 @@ def _from_flag(flag: str) -> tuple[str, str] | None:
     if flag == "éditeur en liste blanche":
         return "+", "éditeur reconnu (liste blanche)"
     if flag.startswith("organisation :"):
-        return "+", "organisation établie (plus d'un an, 10 dépôts ou plus, active)"
+        return "+", (f"organisation établie ({trust.MIN_OWNER_AGE_DAYS} jours ou plus, "
+                     f"{trust.MIN_PUBLIC_REPOS} dépôts d'origine ou plus, dépôt actif)")
     if flag == "sans fichier exécutable":
-        return "+", "sans fichier exécutable : du texte seulement"
+        # Un fait sur l'arborescence, pas un brevet de sûreté : le texte est jugé à part.
+        return "+", "sans fichier exécutable"
     if flag == "✓ déjà installé":
         return "+", "déjà installé chez vous"
     if flag.startswith("✓ variante installée"):
@@ -35,7 +37,12 @@ def _from_flag(flag: str) -> tuple[str, str] | None:
     if m := _JEV.fullmatch(flag):
         return "−", f"Jev y soupçonne : {m.group(1)} ({m.group(2)})"
     if flag.startswith("⚠ SKILL.md : "):
-        return "−", "le texte demande : " + flag[len("⚠ SKILL.md : "):]
+        # Le scan relève un motif sans juger l'intention : « ne jamais lire .env »
+        # le déclenche aussi. D'où « mentionne », jamais « demande ».
+        found = flag[len("⚠ SKILL.md : "):]
+        if found == trust.SKILL_MD_TOO_LONG:
+            return "−", "texte trop long pour être vérifié en entier"
+        return "−", "le texte mentionne : " + found
     if flag == "⚠ SKILL.md non lu":
         return "−", "texte non vérifié : SKILL.md illisible"
     if flag.startswith("⚠ non jugé par Jev"):

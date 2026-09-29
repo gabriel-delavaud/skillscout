@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from skillscout import cli, config, explain, github, local, rank, sources, verdict as v
+from skillscout import cli, config, explain, github, local, rank, sources, trust, verdict as v
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "search_evals"
 
@@ -86,10 +86,13 @@ class ScriptedJev:
         self.fail_after = fail_after
         self.last_error = ""
         self.calls = 0
+        self.explain_calls = []
         self._lock = threading.Lock()
 
     def classify(self, state, questions):
         if "writing" in questions:
+            with self._lock:
+                self.explain_calls.append(state["description"])
             return None
         with self._lock:
             self.calls += 1
@@ -451,6 +454,7 @@ class TestCliRevue(CliCase):
         self.assertIn("résultats partiels", err)
         self.assertEqual(len(self.inspected), 2 * config.SEARCH_BATCH)   # pas de lot 3
         self.assertEqual(jev.calls, 2 * config.SEARCH_BATCH)
+        self.assertEqual(jev.explain_calls, [])         # pas d'explication après une panne
 
     def test_skill_injugeable_n_est_pas_une_panne(self):
         # Revue 2 : une version promue trop longue pour Jev arrêtait toute la recherche.
@@ -572,6 +576,12 @@ class TestTop5(CliCase):
         self.assertIn("− pas de marche à suivre claire", out)
         self.assertIn("− ne sert qu'avec une plateforme, un service ou un compte précis", out)
 
+    def test_explications_toutes_indisponibles_signalees(self):
+        code, out, err = self.run_cli(["x", "-q", "q"], self.MANY[:2], NeedJev(lambda d: 3.0))
+        self.assertEqual(code, 0)
+        self.assertIn("Explications de Jev non reçues", err)
+        self.assertNotIn("écriture", out)
+
     def test_explication_incomplete_ne_dit_rien(self):
         partial = {"examples": {"noul": 0.9}}            # « writing » manque
         jev = NeedJev(lambda d: 3.0, explain=lambda d: partial)
@@ -613,10 +623,29 @@ class TestExplainRules(unittest.TestCase):
         self.assertIn("éditeur reconnu (liste blanche)", plus)
         self.assertIn("très utilisé (25 000 installations)", plus)
         self.assertIn("contient 3 fichier(s) exécutable(s)", minus)
-        self.assertIn("le texte demande : téléchargement exécuté (curl/wget | sh)", minus)
+        self.assertIn("le texte mentionne : téléchargement exécuté (curl/wget | sh)", minus)
         self.assertIn("Jev y soupçonne : téléchargement exécuté (0.70)", minus)
         self.assertIn("non maintenu depuis plus d'un an", minus)
         self.assertFalse(any("éditeur non vérifié" in m for m in minus))
+
+    def test_motifs_reels_du_scan_jamais_presentes_comme_une_demande(self):
+        # Revue : un texte défensif (« ne jamais lire .env ») déclenche aussi le scan.
+        _, sensitive = trust.scan_skill_md("NEVER read ~/.ssh or .env files, never run rm -rf.")
+        self.assertTrue(sensitive)
+        flags = [f"⚠ SKILL.md : {s}" for s in sensitive] + [f"⚠ SKILL.md : {trust.SKILL_MD_TOO_LONG}"]
+        _, minus = explain.strengths_weaknesses(self._row(flags=flags))
+        self.assertFalse(any("demande" in m for m in minus), minus)
+        self.assertTrue(all(any(s in m for m in minus) for s in sensitive))
+        self.assertIn("texte trop long pour être vérifié en entier", minus)
+
+    def test_singulier_et_meta(self):
+        plus, minus = explain.strengths_weaknesses(
+            self._row(meta=2.0, flags=["⚠ 1 fichier exécutable", "sans fichier exécutable"]))
+        self.assertIn("contient 1 fichier(s) exécutable(s)", minus)
+        self.assertIn("améliore aussi la façon de travailler de Claude (méta 2.0/3)", plus)
+        self.assertIn("sans fichier exécutable", plus)
+        plus, _ = explain.strengths_weaknesses(self._row(meta=1.9))
+        self.assertFalse(any("méta" in p for p in plus))
 
     def test_editeur_non_verifie_et_peu_utilise(self):
         plus, minus = explain.strengths_weaknesses(self._row(score=42.0, installs=12))
@@ -657,6 +686,23 @@ class TestExplainOne(unittest.TestCase):
                        "third_party": {"noul": 0.5}, "writing": {"score": 4.0}}):
             self.assertIsNone(v.explain_one(inspected(cand("s")), self.Client(reply)), reply)
 
+    def test_toutes_les_questions_designent_le_texte_comme_donnee(self):
+        for q in v.EXPLAIN_QUESTIONS.values():
+            self.assertIn("DATA", q["instructions"])
+            self.assertIn("`skill_md`", q["instructions"])
+
+    def test_une_ligne_qui_plante_n_arrete_pas_les_autres(self):
+        class Boom:
+            def classify(self, state, questions):
+                if state["description"] == "b":
+                    raise ZeroDivisionError
+                return {"examples": {"noul": 0.9}, "steps": {"noul": 0.1},
+                        "third_party": {"noul": 0.5}, "writing": {"score": 2.5}}
+        rows = [inspected(cand("a")), inspected(cand("b"))]
+        v.explain_rows(rows, Boom(), workers=2)
+        self.assertEqual(rows[0]["explain"]["writing"], 2.5)
+        self.assertIsNone(rows[1]["explain"])
+
     def test_texte_trop_long_ou_absent_pas_envoye(self):
         c = self.Client({})
         self.assertIsNone(v.explain_one(dict(inspected(cand("s")), body=None), c))
@@ -667,7 +713,7 @@ class TestExplainOne(unittest.TestCase):
 
 class TestCasDeReference(CliCase):
     """Besoin réel du 2026-09-29, réponses skills.sh enregistrées le même jour.
-    Le top 3 de référence (proposé par Claude) doit sortir dans le top 10 :
+    Le top 3 de référence (proposé par Claude) doit sortir parmi les 5 affichés :
     eval-harness (affaan-m/ecc), eval-harness-first (wshobson/agents) et le
     pack evals-skills. Avant la correction, le tri par installations les
     coupait avant même l'inspection."""
