@@ -35,71 +35,21 @@ def format_excluded(rows: list[dict]) -> str:
                      for r in rows)
 
 
-def _judge_manual(evaluated: list[dict], need: str, no_jev: bool) -> tuple[bool, str]:
-    """Jugement Jev de la recherche manuelle. Renvoie (Jev a servi, bandeau)."""
-    if no_jev:
-        return False, ""
-    client = jev.JevClient.from_env()
-    if client is None:
-        return False, "Jev indisponible : TYPESAFE_API_KEY absente — classement déterministe seul."
-    verdict.judge_rows(evaluated, client, "manual", need=need)
-    judged = [r for r in evaluated if "jev" in r]
-    if not judged:
-        return False, ""
-    if not any(r["jev"].status == "ok" for r in judged):
-        note = judged[0]["jev"].note
-        for r in judged:
-            del r["jev"]
-        return False, f"Jev indisponible ({note}) — classement déterministe seul."
-    verdict.apply_manual(evaluated)
-    for r in evaluated:
-        if "jev" in r:
-            r["relevance"] = verdict.relevance_line(r["jev"], "manual")
-    return True, ""
+_HINT = ('Astuce : décris le besoin avec des mots courts du domaine, par exemple\n'
+         '  skillscout "{need}" -q "eval harness" -q "llm judge"')
 
 
-def _main_search(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(
-        prog="skillscout",
-        description="Trie les skills de skills.sh par confiance.",
-        epilog="Autres commandes : skillscout routine | uninstall | installed "
-               "(--help pour chacune).")
-    ap.add_argument("besoin", help="ce que le skill doit savoir faire")
-    ap.add_argument("--json", action="store_true",
-                    help="sortie machine du top 10")
-    ap.add_argument("--show-excluded", action="store_true",
-                    help="liste aussi les candidats écartés et pourquoi")
-    ap.add_argument("--limit", type=int, default=25,
-                    help=f"candidats examinés, 1 à {config.MAX_LIMIT} (borne les appels GitHub)")
-    ap.add_argument("--no-jev", action="store_true",
-                    help="classement déterministe seul, sans envoyer les SKILL.md à Jev")
-    args = ap.parse_args(argv)
-    if not 1 <= args.limit <= config.MAX_LIMIT:
-        ap.error(f"--limit doit être entre 1 et {config.MAX_LIMIT}")
-
-    os.makedirs(os.path.dirname(config.CACHE_PATH), exist_ok=True)
-    cache = github.Cache(config.CACHE_PATH)
-    now = time.time()
-
-    try:
-        candidates = sources.search_skills(args.besoin, limit=args.limit)
-    except sources.SearchError as e:
-        print(str(e), file=sys.stderr)
-        return 1
-    if not candidates:
-        print("Aucun candidat sur skills.sh pour cette recherche.", file=sys.stderr)
-        return 1
-
-    # Nommé `gh_candidates`, et non `github`, pour ne pas masquer le module
-    # `github` importé ci-dessus dans le reste de la fonction.
+def _inspect_batch(batch: list[dict], cache, now: float, progress: bool
+                   ) -> tuple[list[dict], list[dict], list[dict]]:
+    """Inspection GitHub d'un lot. Renvoie (évalués, ignorés sur erreur gh,
+    ignorés car non GitHub)."""
+    # Nommé `gh_candidates`, et non `github`, pour ne pas masquer le module.
     gh_candidates, skipped = [], []
-    for c in candidates:
+    for c in batch:
         (gh_candidates if sources.is_github_source(c["source"]) else skipped).append(c)
     for c in skipped:
         print(f"  ignoré {c['skill_id']} : source non GitHub ({c['source']})",
               file=sys.stderr)
-
-    progress = sys.stderr.isatty()
 
     def worker(c):
         try:
@@ -118,32 +68,150 @@ def _main_search(argv: list[str]) -> int:
         print("\r" + " " * 40 + "\r", end="", file=sys.stderr, flush=True)
     for r in ignored:
         print(f"  ignoré {r['source']} : {r['gh_error']}", file=sys.stderr)
+    return evaluated, ignored, skipped
 
-    used_jev, banner = _judge_manual(evaluated, args.besoin, args.no_jev)
+
+def _mark_local(rows: list[dict]) -> None:
+    """Drapeaux « déjà installé », « +N copies » et « +N variantes » des lignes affichées."""
+    skills_dir = config.default_paths().skills_dir
+    for r in rows:
+        status = install.local_status(r, skills_dir)
+        r["installed"] = status
+        flags = list(r.get("flags", []))
+        if status == "same":
+            flags.insert(0, "✓ déjà installé")
+        elif status == "other":
+            flags.insert(0, "≈ autre version installée")
+        if r.get("copies"):
+            flags.append(f"+{len(r['copies'])} copie(s)")
+        if r.get("variants"):
+            flags.append(f"+{len(r['variants'])} variante(s)")
+        r["flags"] = flags
+
+
+def _main_search(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="skillscout",
+        description="Cherche sur skills.sh les skills qui répondent à un besoin ; "
+                    "Jev juge leur pertinence et leur sûreté.",
+        epilog="Autres commandes : skillscout routine | uninstall | installed "
+               "(--help pour chacune).")
+    ap.add_argument("besoin", help="ce que le skill doit savoir faire ; Jev juge la "
+                                   "pertinence par rapport à cette phrase")
+    ap.add_argument("-q", "--query", action="append", metavar="REQUÊTE",
+                    help="requête envoyée à skills.sh, répétable (mots courts du domaine : "
+                         "« eval harness »). Par défaut : le besoin lui-même")
+    ap.add_argument("--json", action="store_true",
+                    help="sortie machine du top 10")
+    ap.add_argument("--show-excluded", action="store_true",
+                    help="liste aussi les candidats écartés et pourquoi")
+    ap.add_argument("--limit", type=int, default=config.SEARCH_CEILING,
+                    help=f"plafond de candidats examinés, 1 à {config.MAX_LIMIT}, par lots "
+                         f"de {config.SEARCH_BATCH} (borne les appels GitHub et Jev)")
+    ap.add_argument("--no-jev", action="store_true",
+                    help="classement déterministe seul, sans envoyer les SKILL.md à Jev")
+    args = ap.parse_args(argv)
+    if not 1 <= args.limit <= config.MAX_LIMIT:
+        ap.error(f"--limit doit être entre 1 et {config.MAX_LIMIT}")
+    queries = [q.strip() for q in (args.query or [args.besoin]) if q.strip()]
+    if not queries:
+        ap.error("requête vide")
+
+    os.makedirs(os.path.dirname(config.CACHE_PATH), exist_ok=True)
+    cache = github.Cache(config.CACHE_PATH)
+    now = time.time()
+
+    try:
+        candidates, failures = sources.search_many(queries)
+    except sources.SearchError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    for f in failures:
+        print(f"  recherche en échec {f}", file=sys.stderr)
+    if not candidates:
+        print("Aucun candidat sur skills.sh pour cette recherche.", file=sys.stderr)
+        return 1
+
+    client, banner = None, ""
+    if not args.no_jev:
+        client = jev.JevClient.from_env()
+        if client is None:
+            banner = "Jev indisponible : TYPESAFE_API_KEY absente — classement déterministe seul."
+    use_jev, jev_ok = client is not None, False
+    progress = sys.stderr.isatty()
+
+    # Lots successifs, dans l'ordre de pertinence de skills.sh, jusqu'à avoir
+    # TOP_N skills à montrer (pertinents selon Jev, ou simplement non écartés
+    # sans Jev) ou atteindre le plafond.
+    rows: list[dict] = []
+    ignored, skipped, examined, pos = [], [], 0, 0
+    ceiling = min(args.limit, len(candidates))
+    while pos < ceiling:
+        batch = candidates[pos:min(pos + config.SEARCH_BATCH, ceiling)]
+        pos += len(batch)
+        evaluated, ign, skp = _inspect_batch(batch, cache, now, progress)
+        ignored += ign
+        skipped += skp
+        examined += len(evaluated)
+        new = rank.add_deduplicated(rows, evaluated)
+        if use_jev and new:
+            verdict.judge_rows(new, client, "manual", need=args.besoin)
+            judged = [r for r in new if "jev" in r]
+            if judged and not jev_ok and not any(r["jev"].status == "ok" for r in judged):
+                banner = f"Jev indisponible ({judged[0]['jev'].note}) — classement déterministe seul."
+                for r in rows:
+                    r.pop("jev", None)
+                use_jev = False
+            else:
+                jev_ok = jev_ok or any(r["jev"].status == "ok" for r in judged)
+                verdict.apply_manual(new)
+        shown = [r for r in rows if (rank.is_relevant(r) if use_jev else not r["excluded"])]
+        if len(shown) >= config.TOP_N:
+            break
     if banner:
         print(banner, file=sys.stderr)
-    excluded_rows = [r for r in evaluated if r["excluded"]]
-    top = (rank.rank_with_jev if used_jev else rank.rank)(evaluated, top=10)
+
+    if use_jev:
+        for r in rows:
+            if "jev" in r:
+                r["relevance"] = verdict.relevance_line(r["jev"], "manual")
+    excluded_rows = [r for r in rows if r["excluded"]]
+    top = (rank.rank_with_jev if use_jev else rank.rank)(rows, top=config.TOP_N)
+    hint = use_jev and not args.query and len(top) < 3
     if not top:
-        print(f"Les {len(evaluated)} candidat(s) examiné(s) ont tous été écartés.",
-              file=sys.stderr)
+        if use_jev and not all(r["excluded"] for r in rows):
+            print(f"Aucun skill pertinent parmi les {examined} candidat(s) examiné(s).",
+                  file=sys.stderr)
+        else:
+            print(f"Les {examined} candidat(s) examiné(s) ont tous été écartés.",
+                  file=sys.stderr)
+        if hint:
+            print(_HINT.format(need=args.besoin), file=sys.stderr)
         if args.show_excluded and excluded_rows:
             print(format_excluded(excluded_rows), file=sys.stderr)
         return 1
+    _mark_local(top)
 
     if args.json:
-        hide = {"body", "paths", "skill_files"}
+        hide = {"body", "paths", "skill_files", "_members"}
         print(json.dumps([{k: (asdict(v) if k == "jev" else v)
                            for k, v in r.items() if k not in hide}
                           for r in top], ensure_ascii=False, indent=2))
         return 0
 
-    title = "pertinence (Jev) puis confiance" if used_jev else "confiance"
-    print(f"\nTOP 10 par {title} ({len(excluded_rows)} écarté(s) sur "
-          f"{len(evaluated)} examiné(s), {len(ignored) + len(skipped)} ignoré(s))\n")
+    counts = (f"{len(excluded_rows)} écarté(s) sur {examined} examiné(s), "
+              f"{len(ignored) + len(skipped)} ignoré(s)")
+    if use_jev and len(top) < config.TOP_N:
+        print(f"\nSeulement {len(top)} skill(s) pertinent(s) trouvé(s) ({counts})\n")
+    elif use_jev:
+        print(f"\nTOP {config.TOP_N} par pertinence (Jev) ({counts})\n")
+    else:
+        print(f"\nTOP {config.TOP_N} par pertinence skills.sh ({counts})\n")
     print(format_top10(top))
     print("\nLe @sha après le dépôt identifie l'arborescence évaluée ; le "
           "SKILL.md analysé est celui de cet instantané.")
+    if hint:
+        print("\n" + _HINT.format(need=args.besoin))
 
     if args.show_excluded and excluded_rows:
         print(f"\nÉcartés ({len(excluded_rows)}) :\n")

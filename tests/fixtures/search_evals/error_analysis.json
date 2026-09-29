@@ -1,0 +1,606 @@
+{
+"query": "error analysis",
+"recorded": "2026-09-29",
+"skills": [
+{
+"source": "hamelsmu/evals-skills",
+"skillId": "error-analysis",
+"name": "error-analysis",
+"installs": 691
+},
+{
+"source": "sickn33/agentic-awesome-skills",
+"skillId": "error-debugging-error-analysis",
+"name": "error-debugging-error-analysis",
+"installs": 339
+},
+{
+"source": "sickn33/agentic-awesome-skills",
+"skillId": "error-diagnostics-error-analysis",
+"name": "error-diagnostics-error-analysis",
+"installs": 289
+},
+{
+"source": "dart-lang/skills",
+"skillId": "dart-fix-static-analysis-errors",
+"name": "dart-fix-static-analysis-errors",
+"installs": 256
+},
+{
+"source": "garethmanning/education-agent-skills",
+"skillId": "error-analysis-protocol",
+"name": "error-analysis-protocol",
+"installs": 123
+},
+{
+"source": "microsoft/azure-skills",
+"skillId": "azure-validate",
+"name": "azure-validate",
+"installs": 607325
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "analyze-project",
+"name": "analyze-project",
+"installs": 311112
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "safe-debug",
+"name": "safe-debug",
+"installs": 310691
+},
+{
+"source": "obra/superpowers",
+"skillId": "systematic-debugging",
+"name": "systematic-debugging",
+"installs": 274973
+},
+{
+"source": "mattpocock/skills",
+"skillId": "diagnose",
+"name": "diagnose",
+"installs": 239393
+},
+{
+"source": "juliusbrussee/caveman",
+"skillId": "investigate-first",
+"name": "investigate-first",
+"installs": 74444
+},
+{
+"source": "liarjsdev/liarjs-skills",
+"skillId": "fingerprint-failure-triage",
+"name": "fingerprint-failure-triage",
+"installs": 69842
+},
+{
+"source": "github/awesome-copilot",
+"skillId": "web-design-reviewer",
+"name": "web-design-reviewer",
+"installs": 13786
+},
+{
+"source": "github/awesome-copilot",
+"skillId": "ai-prompt-engineering-safety-review",
+"name": "ai-prompt-engineering-safety-review",
+"installs": 10321
+},
+{
+"source": "github/awesome-copilot",
+"skillId": "project-workflow-analysis-blueprint-generator",
+"name": "project-workflow-analysis-blueprint-generator",
+"installs": 9445
+},
+{
+"source": "github/awesome-copilot",
+"skillId": "java-add-graalvm-native-image-support",
+"name": "java-add-graalvm-native-image-support",
+"installs": 8787
+},
+{
+"source": "wshobson/agents",
+"skillId": "error-handling-patterns",
+"name": "error-handling-patterns",
+"installs": 21854
+},
+{
+"source": "samber/cc-skills-golang",
+"skillId": "golang-error-handling",
+"name": "golang-error-handling",
+"installs": 42195
+},
+{
+"source": "samber/cc-skills-golang",
+"skillId": "golang-troubleshooting",
+"name": "golang-troubleshooting",
+"installs": 39391
+},
+{
+"source": "samber/cc-skills-golang",
+"skillId": "golang-samber-oops",
+"name": "golang-samber-oops",
+"installs": 37941
+},
+{
+"source": "addyosmani/agent-skills",
+"skillId": "doubt-driven-development",
+"name": "doubt-driven-development",
+"installs": 37620
+},
+{
+"source": "addyosmani/agent-skills",
+"skillId": "observability-and-instrumentation",
+"name": "observability-and-instrumentation",
+"installs": 35739
+},
+{
+"source": "get-convex/agent-skills",
+"skillId": "convex-self-heal",
+"name": "convex-self-heal",
+"installs": 26267
+},
+{
+"source": "warpdotdev/common-skills",
+"skillId": "council",
+"name": "council",
+"installs": 25624
+},
+{
+"source": "vuejs-ai/skills",
+"skillId": "vue-debug-guides",
+"name": "vue-debug-guides",
+"installs": 25210
+},
+{
+"source": "aws/agent-toolkit-for-aws",
+"skillId": "amazon-opensearch-service",
+"name": "amazon-opensearch-service",
+"installs": 4627
+},
+{
+"source": "warpdotdev/common-skills",
+"skillId": "cross-critique",
+"name": "cross-critique",
+"installs": 19784
+},
+{
+"source": "tt-a1i/archify",
+"skillId": "archify-review",
+"name": "archify-review",
+"installs": 17854
+},
+{
+"source": "wshobson/agents",
+"skillId": "stride-analysis-patterns",
+"name": "stride-analysis-patterns",
+"installs": 16766
+},
+{
+"source": "dart-lang/skills",
+"skillId": "dart-run-static-analysis",
+"name": "dart-run-static-analysis",
+"installs": 16648
+},
+{
+"source": "dart-lang/skills",
+"skillId": "dart-fix-runtime-errors",
+"name": "dart-fix-runtime-errors",
+"installs": 16446
+},
+{
+"source": "wshobson/agents",
+"skillId": "threat-mitigation-mapping",
+"name": "threat-mitigation-mapping",
+"installs": 16139
+},
+{
+"source": "wshobson/agents",
+"skillId": "backtesting-frameworks",
+"name": "backtesting-frameworks",
+"installs": 15548
+},
+{
+"source": "wshobson/agents",
+"skillId": "kpi-dashboard-design",
+"name": "kpi-dashboard-design",
+"installs": 14750
+},
+{
+"source": "tw93/waza",
+"skillId": "hunt",
+"name": "hunt",
+"installs": 14497
+},
+{
+"source": "momentic-ai/skills",
+"skillId": "momentic-maintain",
+"name": "momentic-maintain",
+"installs": 14483
+},
+{
+"source": "sugarforever/01coder-agent-skills",
+"skillId": "china-stock-analysis",
+"name": "china-stock-analysis",
+"installs": 12619
+},
+{
+"source": "getsentry/sentry-agent-skills",
+"skillId": "sentry-fix-issues",
+"name": "sentry-fix-issues",
+"installs": 2464
+},
+{
+"source": "jakubkrehel/skills",
+"skillId": "interface-review",
+"name": "interface-review",
+"installs": 12206
+},
+{
+"source": "gracefullight/stock-checker",
+"skillId": "stock-analysis",
+"name": "stock-analysis",
+"installs": 11748
+},
+{
+"source": "wshobson/agents",
+"skillId": "protocol-reverse-engineering",
+"name": "protocol-reverse-engineering",
+"installs": 11665
+},
+{
+"source": "riekelt/principal-engineer",
+"skillId": "principal-engineering",
+"name": "principal-engineering",
+"installs": 10967
+},
+{
+"source": "riekelt/principal-engineer",
+"skillId": "handling-failures",
+"name": "handling-failures",
+"installs": 10922
+},
+{
+"source": "wshobson/agents",
+"skillId": "memory-forensics",
+"name": "memory-forensics",
+"installs": 10351
+},
+{
+"source": "wshobson/agents",
+"skillId": "risk-metrics-calculation",
+"name": "risk-metrics-calculation",
+"installs": 10221
+},
+{
+"source": "wshobson/agents",
+"skillId": "binary-analysis-patterns",
+"name": "binary-analysis-patterns",
+"installs": 10124
+},
+{
+"source": "redis/agent-skills",
+"skillId": "redis-clustering",
+"name": "redis-clustering",
+"installs": 1560
+},
+{
+"source": "getcargohq/cargo-skills",
+"skillId": "cargo-analytics",
+"name": "cargo-analytics",
+"installs": 7730
+},
+{
+"source": "astronomer/agents",
+"skillId": "airflow",
+"name": "airflow",
+"installs": 1384
+},
+{
+"source": "getcargohq/cargo-skills",
+"skillId": "cargo-diagnostics",
+"name": "cargo-diagnostics",
+"installs": 6515
+},
+{
+"source": "trailofbits/skills",
+"skillId": "sharp-edges",
+"name": "sharp-edges",
+"installs": 5927
+},
+{
+"source": "astronomer/agents",
+"skillId": "debugging-dags",
+"name": "debugging-dags",
+"installs": 1145
+},
+{
+"source": "dbt-labs/dbt-agent-skills",
+"skillId": "using-dbt-for-analytics-engineering",
+"name": "using-dbt-for-analytics-engineering",
+"installs": 1002
+},
+{
+"source": "jeffallan/claude-skills",
+"skillId": "debugging-wizard",
+"name": "debugging-wizard",
+"installs": 4627
+},
+{
+"source": "webflow/webflow-skills",
+"skillId": "webflow-code-componenttroubleshoot-deploy",
+"name": "webflow-code-component:troubleshoot-deploy",
+"installs": 902
+},
+{
+"source": "composiohq/awesome-claude-skills",
+"skillId": "langsmith-fetch",
+"name": "langsmith-fetch",
+"installs": 3876
+},
+{
+"source": "cursor/plugins",
+"skillId": "why",
+"name": "why",
+"installs": 3672
+},
+{
+"source": "launchdarkly/ai-tooling",
+"skillId": "investigate",
+"name": "investigate",
+"installs": 624
+},
+{
+"source": "tradermonty/claude-trading-skills",
+"skillId": "data-quality-checker",
+"name": "data-quality-checker",
+"installs": 2791
+},
+{
+"source": "forcedotcom/sf-skills",
+"skillId": "platform-apex-anonymous-run",
+"name": "platform-apex-anonymous-run",
+"installs": 2726
+},
+{
+"source": "brianlovin/agent-config",
+"skillId": "fix-sentry-issues",
+"name": "fix-sentry-issues",
+"installs": 2714
+},
+{
+"source": "dotnet/skills",
+"skillId": "binlog-failure-analysis",
+"name": "binlog-failure-analysis",
+"installs": 2457
+},
+{
+"source": "dotnet/skills",
+"skillId": "binlog-generation",
+"name": "binlog-generation",
+"installs": 2395
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "agent-observability-trace-rca",
+"name": "agent-observability-trace-rca",
+"installs": 476
+},
+{
+"source": "ccxt/ccxt",
+"skillId": "ccxt-python",
+"name": "ccxt-python",
+"installs": 1856
+},
+{
+"source": "pydantic/skills",
+"skillId": "logfire-query",
+"name": "logfire-query",
+"installs": 1577
+},
+{
+"source": "lingzhi227/agent-research-skills",
+"skillId": "code-debugging",
+"name": "code-debugging",
+"installs": 1563
+},
+{
+"source": "ai-evals-course/evals-skills",
+"skillId": "error-discovery",
+"name": "error-discovery",
+"installs": 771
+},
+{
+"source": "anthropics/knowledge-work-plugins",
+"skillId": "data-validation",
+"name": "data-validation",
+"installs": 270
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "llm-obs-trace-rca",
+"name": "llm-obs-trace-rca",
+"installs": 238
+},
+{
+"source": "dynatrace-oss/dtctl",
+"skillId": "dtctl",
+"name": "dtctl",
+"installs": 1102
+},
+{
+"source": "ailabs-393/ai-labs-claude-skills",
+"skillId": "test-specialist",
+"name": "test-specialist",
+"installs": 900
+},
+{
+"source": "davila7/claude-code-templates",
+"skillId": "error-resolver",
+"name": "Error Resolver",
+"installs": 406
+},
+{
+"source": "apetta/agent-xlsx",
+"skillId": "agent-xlsx",
+"name": "agent-xlsx",
+"installs": 760
+},
+{
+"source": "backnotprop/pstack",
+"skillId": "why",
+"name": "why",
+"installs": 731
+},
+{
+"source": "alirezarezvani/claude-skills",
+"skillId": "analytics-tracking",
+"name": "analytics-tracking",
+"installs": 713
+},
+{
+"source": "mlflow/skills",
+"skillId": "analyzing-mlflow-trace",
+"name": "analyzing-mlflow-trace",
+"installs": 706
+},
+{
+"source": "joellewis/finance_skills",
+"skillId": "historical-risk",
+"name": "historical-risk",
+"installs": 653
+},
+{
+"source": "joellewis/finance_skills",
+"skillId": "operational-risk",
+"name": "operational-risk",
+"installs": 615
+},
+{
+"source": "mohitmishra786/low-level-dev-skills",
+"skillId": "clang",
+"name": "clang",
+"installs": 608
+},
+{
+"source": "mohitmishra786/low-level-dev-skills",
+"skillId": "elf-inspection",
+"name": "elf-inspection",
+"installs": 538
+},
+{
+"source": "claw.163.com",
+"skillId": "email-diagnose",
+"name": "email-diagnose",
+"installs": 485
+},
+{
+"source": "rshankras/claude-code-apple-skills",
+"skillId": "generators",
+"name": "generators",
+"installs": 467
+},
+{
+"source": "pproenca/dot-skills",
+"skillId": "debug",
+"name": "debug",
+"installs": 428
+},
+{
+"source": "yonatangross/orchestkit",
+"skillId": "errors",
+"name": "errors",
+"installs": 213
+},
+{
+"source": "vapiai/skills",
+"skillId": "simulations",
+"name": "simulations",
+"installs": 85
+},
+{
+"source": "secondsky/claude-skills",
+"skillId": "seo-optimizer",
+"name": "seo-optimizer",
+"installs": 417
+},
+{
+"source": "michael-denyer/pstack-claude",
+"skillId": "why",
+"name": "why",
+"installs": 403
+},
+{
+"source": "patricio0312rev/skills",
+"skillId": "unit-test-generator",
+"name": "unit-test-generator",
+"installs": 354
+},
+{
+"source": "jabrena/plinth",
+"skillId": "111-java-maven-dependencies",
+"name": "111-java-maven-dependencies",
+"installs": 343
+},
+{
+"source": "cinience/alicloud-skills",
+"skillId": "alicloud-observability-sls-log-query",
+"name": "alicloud-observability-sls-log-query",
+"installs": 340
+},
+{
+"source": "andrelandgraf/fullstackrecipes",
+"skillId": "observability-monitoring",
+"name": "observability-monitoring",
+"installs": 324
+},
+{
+"source": "guia-matthieu/clawfu-skills",
+"skillId": "thought-based-reasoning",
+"name": "thought-based-reasoning",
+"installs": 292
+},
+{
+"source": "secondsky/claude-skills",
+"skillId": "chrome-devtools",
+"name": "chrome-devtools",
+"installs": 289
+},
+{
+"source": "secondsky/claude-skills",
+"skillId": "cloudflare-workers-observability",
+"name": "cloudflare-workers-observability",
+"installs": 282
+},
+{
+"source": "garrytan/gstack",
+"skillId": "gstack-openclaw-investigate",
+"name": "gstack-openclaw-investigate",
+"installs": 280
+},
+{
+"source": "buiducnhat/cobrew",
+"skillId": "fix",
+"name": "fix",
+"installs": 276
+},
+{
+"source": "sendaifun/skills",
+"skillId": "vulnhunter",
+"name": "vulnhunter",
+"installs": 262
+},
+{
+"source": "mikiarlo3/ai-copywriter",
+"skillId": "ai-copywriter",
+"name": "ai-copywriter",
+"installs": 257
+},
+{
+"source": "canner/wrenai",
+"skillId": "wren-usage",
+"name": "wren-usage",
+"installs": 254
+}
+]
+}

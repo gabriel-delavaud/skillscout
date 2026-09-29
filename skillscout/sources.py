@@ -5,7 +5,7 @@ import json
 import re
 from urllib.parse import quote
 
-from . import net
+from . import config, net
 
 SEARCH_URL = "https://skills.sh/api/search?q={}"
 
@@ -20,15 +20,12 @@ class SearchError(Exception):
     """skills.sh est injoignable ou a répondu autre chose que du JSON."""
 
 
-def search_skills(query: str, limit: int = 25) -> list[dict]:
-    """Interroge skills.sh et renvoie les `limit` candidats les plus installés.
-
-    skills.sh renvoie ses résultats triés par pertinence ; `relevance_rank`
-    capture la position de chaque candidat dans CET ordre (0 = premier
-    résultat de l'API), avant le retri par installations ci-dessous. La
-    pertinence ne sert qu'à départager des scores égaux plus loin dans le
-    pipeline (voir `rank()`), jamais à choisir qui est tronqué ici.
-    """
+def search_skills(query: str, limit: int = config.MAX_LIMIT) -> list[dict]:
+    """Interroge skills.sh et renvoie ses `limit` premiers candidats, dans
+    l'ordre de pertinence de skills.sh. `relevance_rank` garde cette position
+    (0 = premier résultat de l'API). Le nombre d'installations ne sert jamais
+    à choisir qui est tronqué : trier par popularité faisait passer des skills
+    génériques très installés devant les skills qui répondent au besoin."""
     try:
         data = net.get_json(SEARCH_URL.format(quote(query)))
     except (OSError, ValueError) as e:  # URLError ⊂ OSError ; JSON invalide ⊂ ValueError
@@ -37,8 +34,32 @@ def search_skills(query: str, limit: int = 25) -> list[dict]:
     if not isinstance(items, list):
         raise SearchError("skills.sh a renvoyé une réponse d'une forme inattendue")
     out = [c for c in (_candidate(s, rank) for rank, s in enumerate(items)) if c]
-    out.sort(key=lambda s: s["installs"], reverse=True)
     return out[:limit]
+
+
+def search_many(queries: list[str]) -> tuple[list[dict], list[str]]:
+    """Plusieurs recherches fusionnées : chaque skill (source + identifiant)
+    garde son meilleur rang parmi toutes les requêtes ; à rang égal, le plus
+    installé passe devant. Renvoie (candidats, requêtes en échec). Lève
+    SearchError seulement si toutes les requêtes échouent."""
+    best: dict[tuple[str, str], dict] = {}
+    failures: list[str] = []
+    for q in queries:
+        try:
+            found = search_skills(q)
+        except SearchError as e:
+            failures.append(f"{q!r} : {e}")
+            continue
+        for c in found:
+            key = (c["source"].lower(), c["skill_id"].lower())
+            kept = best.get(key)
+            if kept is None or c.get("relevance_rank", 0) < kept.get("relevance_rank", 0):
+                best[key] = c
+    if failures and len(failures) == len(queries):
+        raise SearchError("; ".join(failures))
+    out = sorted(best.values(),
+                 key=lambda c: (c.get("relevance_rank", 0), -c.get("installs", 0)))
+    return out, failures
 
 
 def _candidate(s, rank: int) -> dict | None:

@@ -100,7 +100,8 @@ def inspect_candidate(cand: dict, cache: github.Cache, now: float) -> dict:
         blobs = snap.get("blobs", {})
         md_paths = trust.locate_skill_mds(paths, cand["skill_id"])
         if md_paths:
-            md_path, md_sha = md_paths[0], blobs.get(md_paths[0])
+            md_path = trust.primary_skill_md(md_paths)
+            md_sha = blobs.get(md_path)
         if set(md_paths) & set(opaque):
             # Le blob d'un SKILL.md en lien symbolique ne contient que le
             # chemin de sa cible : ce n'est pas le texte que l'agent suivra.

@@ -101,7 +101,10 @@ def discover(prof: profile_mod.Profile) -> tuple[list[dict], list[str], bool]:
     searched = 0
     for theme in themes:
         try:
-            for c in sources.search_skills(theme, limit=prof.per_query):
+            # La routine vise les skills populaires d'un thème : ici, et ici
+            # seulement, les plus installés passent devant la pertinence.
+            hits = sorted(sources.search_skills(theme), key=lambda c: -c["installs"])
+            for c in hits[:prof.per_query]:
                 add(c)
             searched += 1
         except sources.SearchError as e:

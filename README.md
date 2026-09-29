@@ -21,20 +21,22 @@ Le problème : **un skill, ce sont des instructions que Claude va suivre avec vo
 ```
   vous tapez :  skillscout "tester la sécurité d'un site web"
         │
-   1.   Il cherche sur skills.sh                       → jusqu'à 25 candidats
-        │
+   1.   Il cherche sur skills.sh                       → candidats dans l'ordre de
+        │   (une recherche par requête -q, fusionnées)     pertinence de skills.sh
    2.   Il inspecte chaque dépôt GitHub                → qui publie ? depuis quand ?
         │   (en parallèle, résultats mis en cache)        y a-t-il du code exécutable
         │                                                 dans le dossier du skill ?
    3.   Il lit le texte du SKILL.md                    → demande-t-il d'exécuter du code
         │   (la version exacte qu'il a inspectée)         téléchargé ? de toucher aux
         │                                                 secrets ? de manipuler l'IA ?
-   4.   Il écarte le risqué et classe le reste         → top 10
-        │
+   4.   Il écarte le risqué, regroupe les forks        → une ligne par skill
+        │   d'un même skill
    5.   Jev (TypeSafe) lit chaque texte restant        → écarte ce que les motifs ne
-        (un classifieur, pas un agent)                    voient pas, et classe par
-                                                          pertinence pour votre besoin
+        (un classifieur, pas un agent)                    voient pas, et ne garde que
+                                                          ce qui répond à votre besoin
 ```
+
+Tout se fait par lots de 25 candidats : tant que moins de 10 skills pertinents sont trouvés, skillscout examine le lot suivant, jusqu'à 75 candidats (`--limit`).
 
 **Point important : le premier tri (étapes 1 à 4) ne passe par aucune IA.** C'est du code, identique à chaque exécution, vérifiable ligne par ligne. Jev n'intervient qu'ensuite, sur les candidats restants : il peut en écarter d'autres, **jamais repêcher** un skill écarté. Le texte des skills lui est présenté comme une donnée à juger, jamais comme une consigne. Sans clé Jev, ou avec `--no-jev`, vous obtenez le classement déterministe seul.
 
@@ -157,6 +159,7 @@ La clé est demandée à part, en saisie masquée : elle n'apparaît ni à l'éc
 
 ```bash
 skillscout "ce que vous voulez faire"
+skillscout "ce que vous voulez faire" -q "mots du domaine" -q "autres mots"
 ```
 
 | Option | Effet |
@@ -165,27 +168,33 @@ skillscout "ce que vous voulez faire"
 | `--no-jev` | classement déterministe seul, rien n'est envoyé à TypeSafe |
 | `--show-excluded` | liste aussi les candidats écartés, avec la raison et les fichiers en cause |
 | `--json` | sortie pour un programme plutôt que pour un humain, scores Jev inclus |
-| `--limit N` | examiner N candidats au lieu de 25 (1 à 100) |
+| `-q "requête"` | requête envoyée à skills.sh, répétable ; par défaut, la phrase du besoin elle-même |
+| `--limit N` | plafond de candidats examinés, par lots de 25 (75 par défaut, 1 à 100) |
 
-**Décrivez un besoin, pas un nom d'outil.** « optimiser des requêtes de base de données » donnera de meilleurs résultats que « postgres ».
+**La phrase décrit le besoin, les `-q` le cherchent.** Jev juge chaque skill par rapport à la phrase ; skills.sh, lui, trouve mieux avec des mots courts du domaine. « Définir des critères de réussite et construire des évaluations pour une appli LLM » ne ramène rien d'utile telle quelle, alors qu'avec `-q "eval harness" -q "llm judge"` les bons skills sortent en tête. Quand moins de 3 skills pertinents sont trouvés sans `-q`, skillscout le suggère.
 
 ---
 
 ## Lire le résultat
 
 ```
-TOP 10 par confiance (3 écarté(s) sur 12 examiné(s), 0 ignoré(s))
+TOP 10 par pertinence (Jev) (3 écarté(s) sur 25 examiné(s), 0 ignoré(s))
 
- 1. securite-developpement       84.3  etalab-ia/skills@a69bf67        éditeur en liste blanche · sans fichier exécutable
-    besoin 3.0/3 · méta 1.0/3 — Bonnes pratiques de sécurité pour le développement
- 2. planify-write-plan           29.3  aymericderbois/skills@1392f39   sans fichier exécutable
- 3. deploy-helper                12.1  qqun/skills@77a6cb7             sans fichier exécutable · ⚠ SKILL.md : accès aux secrets (~/.ssh, .env, credentials)
+ 1. eval-harness                 50.0  affaan-m/ecc@1a2b3c4            ✓ déjà installé · sans fichier exécutable · +2 variante(s)
+    besoin 2.9/3 · méta 2.1/3 — Formal evaluation framework for Claude Code sessions
+ 2. eval-harness-first           80.0  wshobson/agents@5d6e7f8         ✓ déjà installé · éditeur en liste blanche · sans fichier exécutable
+    besoin 2.5/3 · méta 1.8/3 — Build the evaluation harness that gates every fine-tuning run
 ```
+
+Avec Jev, seuls les skills qu'il juge pertinents pour votre besoin (au moins 1,5/3) sont affichés, du plus au moins pertinent ; s'il y en a moins de 10, l'en-tête l'annonce (« Seulement 4 skill(s) pertinent(s) trouvé(s) »). Sans Jev, l'ordre est celui de skills.sh : la confiance écarte, elle ne classe pas.
 
 Chaque ligne donne : le **nom du skill**, son **score de confiance**, le **dépôt** et l'**empreinte de l'arborescence** inspectée, et des **indicateurs** :
 
 | Indicateur | Signification |
 |---|---|
+| `✓ déjà installé` | `~/.claude/skills/<nom>/SKILL.md` a exactement ce contenu (fins de ligne Windows comprises) |
+| `≈ autre version installée` | un skill de ce nom est installé, avec un autre contenu |
+| `+2 copie(s)` · `+3 variante(s)` | le même skill publié ailleurs, à l'identique (copie) ou retouché (fork, traduction) ; seule la version la plus sûre est affichée et jugée, `--json` liste les autres |
 | `éditeur en liste blanche` | publié par un éditeur reconnu |
 | `organisation : ≥365 j, ≥10 dépôts d'origine, dépôt actif` | organisation établie — ce sont des **faits mesurés**, pas une garantie |
 | `sans fichier exécutable` | aucun code exécutable dans le dossier du skill — un fait sur les fichiers, pas un brevet de sûreté |
@@ -195,7 +204,7 @@ Chaque ligne donne : le **nom du skill**, son **score de confiance**, le **dép�
 | `⚠ 1 lien symbolique ou sous-module` | le dossier du skill contient une entrée dont le contenu n'a pas pu être inspecté (éditeur de confiance uniquement) |
 | `⚠ non maintenu depuis plus d'un an` | le dépôt semble abandonné |
 | `⚠ Jev : …` | Jev relève un risque (valeur de 0 à 1) sans atteindre le seuil d'exclusion |
-| `⚠ non jugé par Jev (…)` | Jev n'a pas pu juger ce skill : il est classé après les autres |
+| `⚠ non jugé par Jev (…)` | sans Jev (clé absente ou panne) : le skill n'a pas été jugé ; quand Jev fonctionne, un skill qu'il n'a pas pu juger n'est pas affiché |
 
 Pour installer le skill retenu, utilisez l'outil officiel :
 

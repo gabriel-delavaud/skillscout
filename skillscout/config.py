@@ -7,6 +7,9 @@ from pathlib import Path
 
 CACHE_PATH = os.path.join(os.path.expanduser("~"), ".cache", "skillscout", "cache.db")
 MAX_LIMIT = 100          # skills.sh ne renvoie jamais plus ; borne les appels GitHub
+SEARCH_BATCH = 25        # candidats inspectés (et jugés par Jev) par lot
+SEARCH_CEILING = 75      # plafond par défaut de la recherche manuelle, tous lots confondus
+TOP_N = 10               # skills affichés ; les lots s'arrêtent dès qu'il y en a assez
 WORKERS = 6              # dépôts inspectés en parallèle
 SKILL_MD_SCAN_LIMIT = 500_000   # caractères analysés ; au-delà, non vérifiable
 
