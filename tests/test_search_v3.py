@@ -462,6 +462,22 @@ class TestCliRevue(CliCase):
         self.assertGreater(len(self.inspected), config.SEARCH_BATCH)
         self.assertIn("TOP 10 par pertinence (Jev)", out)
 
+    def test_jev_en_panne_des_le_debut_repli_au_premier_lot(self):
+        # Revue 3 : un skill trop long dans le lot 1 retardait le repli d'un lot.
+        many = [cand(f"s{i:02}", f"org/r{i:02}", rank_=i) for i in range(60)]
+
+        def inspect(c):
+            row = inspected(c)
+            return row | {"body": "x" * (v.JEV_TEXT_LIMIT + 1)} if c["skill_id"] == "s03" else row
+        jev = ScriptedJev(lambda d: answers(3.0), fail_after=0)
+        code, out, err = self.run_cli(["x", "-q", "q"], many, jev, inspect=inspect)
+        self.assertEqual(code, 0)
+        self.assertIn("Jev indisponible (HTTP 429) — classement déterministe seul", err)
+        self.assertEqual(len(self.inspected), config.SEARCH_BATCH)
+        self.assertEqual(jev.calls, config.SEARCH_BATCH - 1)
+        self.assertIn("par pertinence skills.sh", out)
+        self.assertNotIn("non jugé", out)
+
     def test_une_seule_erreur_d_appel_n_arrete_pas(self):
         many = [cand(f"s{i:02}", f"org/r{i:02}", rank_=i) for i in range(60)]
         state = {"n": 0}

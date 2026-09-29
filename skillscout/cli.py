@@ -179,14 +179,14 @@ def _main_search(argv: list[str]) -> int:
             # Un skill trop long ou illisible n'est pas une panne : seuls les
             # appels à Jev eux-mêmes en échec comptent.
             failed_calls = 0 if ok else failed_calls + len(down)
-            if not jev_ok and down and len(down) == len(judged):
+            if not jev_ok and down and not ok:
                 # Jev n'a encore jamais répondu : repli déterministe.
                 banner = f"Jev indisponible ({down[0]['jev'].note}) — classement déterministe seul."
                 for r in rank.members(rows):
                     r.pop("jev", None)
                 use_jev = False
                 break
-            if jev_ok and failed_calls >= config.JEV_OUTAGE_CALLS:
+            if jev_ok and down and failed_calls >= config.JEV_OUTAGE_CALLS:
                 banner = (f"Jev indisponible à partir du lot {batch_no} "
                           f"({down[0]['jev'].note}) — résultats partiels.")
                 outage = True
