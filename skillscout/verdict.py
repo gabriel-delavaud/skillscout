@@ -89,6 +89,22 @@ SUBSTANCE_QUESTION = _score("Is `skill_md` a real, actionable method rather than
 
 RELEVANCE_KEYS = ("meta", "need", "substance")
 
+# Posées dans un second appel, aux seuls skills affichés : de quoi dire leurs
+# forces et faiblesses au-delà de la pertinence (voir explain.py).
+EXPLAIN_QUESTIONS = {
+    "examples": _noul("Does `skill_md` give concrete examples, templates or sample outputs "
+                      "that an agent can reuse?"),
+    "steps": _noul("Does `skill_md` lay out clear, ordered steps that an agent can follow "
+                   "from start to finish?"),
+    "third_party": _noul("Does `skill_md` only work with one specific third-party platform, "
+                         "paid service or account, beyond the coding agent itself and common "
+                         "open-source tools?"),
+    "writing": _score("How well is `skill_md` written as instructions for an LLM agent, so that "
+                      "the agent performs as well as possible: precise and unambiguous, detailed "
+                      "enough, saying when to use it, with steps, constraints and the expected "
+                      "result?", ["Poorly written", "Vague", "Clear", "Excellent"]),
+}
+
 
 def questions() -> dict:
     return {**SECURITY_QUESTIONS, "meta": META_QUESTION, "need": NEED_QUESTION,
@@ -191,6 +207,40 @@ def judge_rows(rows: list[dict], client, *, need: str | None = None, text_of=Non
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for r, judgement in zip(todo, pool.map(work, todo)):
             r["jev"] = judgement
+
+
+def explain_one(row: dict, client) -> dict | None:
+    """Réponses aux EXPLAIN_QUESTIONS (Noul de 0 à 1, « writing » de 0 à 3),
+    ou None si le texte n'a pas pu être envoyé ou si Jev n'a pas répondu en
+    entier : une réponse partielle ne vaut jamais zéro, elle ne dit rien."""
+    text = row.get("body")
+    if client is None or text is None:
+        return None
+    normalized = trust._normalize(text)
+    if len(normalized) > JEV_TEXT_LIMIT:
+        return None
+    state = build_state(normalized, row.get("description", ""),
+                        sorted(row.get("skill_files") or {}))
+    answers = client.classify(state, EXPLAIN_QUESTIONS)
+    try:
+        return {k: (_num(answers[k]["score"], 3.0) if q["type"] == "score"
+                    else _num(answers[k]["noul"], 1.0))
+                for k, q in EXPLAIN_QUESTIONS.items()}
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def explain_rows(rows: list[dict], client, workers: int = JEV_WORKERS) -> None:
+    """Pose `row["explain"]` (dict ou None) sur chaque ligne ; une exception
+    sur une ligne ne touche qu'elle."""
+    def work(r):
+        try:
+            return explain_one(r, client)
+        except Exception:            # noqa: BLE001 — une ligne ne bloque pas les autres
+            return None
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for r, answers in zip(rows, pool.map(work, rows)):
+            r["explain"] = answers
 
 
 def apply_manual(rows: list[dict]) -> None:

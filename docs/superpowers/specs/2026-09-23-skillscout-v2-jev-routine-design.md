@@ -494,6 +494,26 @@ manifeste) ; les fichiers laissés par la simulation du 2026-09-27
 `journal.jsonl`, `routine.lock`) ne sont plus lus. Les sections de ce document
 consacrées à la routine sont historiques.
 
+## Top 5 expliqué (2.2.0, 2026-09-29)
+
+Demande de l'utilisateur : une ligne vide entre chaque skill, 5 skills au plus,
+avec pour chacun ses forces et faiblesses, en gardant ses notes. Choix faits :
+
+- La recherche continue jusqu'à 10 skills pertinents (`config.TOP_N`), puis les 5
+  meilleurs sont affichés (`config.DISPLAY_N`) : option « chercher 10, afficher 5 ».
+- Forces et faiblesses tirées des mesures et de Jev (option « mesures + Jev ») :
+  `explain.strengths_weaknesses` applique des règles fixes aux indicateurs du tri
+  de confiance (libellés produits par `trust.py`), aux notes de Jev et à un second
+  appel à Jev posé aux seuls skills affichés (`verdict.EXPLAIN_QUESTIONS`) :
+  `examples`, `steps`, `third_party` (Noul ; oui ≥ 0,6, non ≤ 0,25) et `writing`
+  (Score 0–3 : le SKILL.md est-il bien écrit comme instructions pour un LLM,
+  précis, détaillé, avec déclencheur, étapes, contraintes et résultat attendu ;
+  ajouté à la demande de l'utilisateur). La note d'écriture s'affiche avec les
+  autres (« écriture x/3 ») mais ne change pas le classement. Les seuils portent
+  sur la note arrondie au dixième, celle qui est affichée. Aucune phrase n'est
+  rédigée par un modèle ; une réponse d'explication incomplète ne dit rien.
+- Pas d'explication Jev sans Jev, ni après une panne : les mesures seules restent.
+
 ## Limites connues
 
 - Jev est un classifieur ; un SKILL.md peut chercher à le tromper. D2, D3, la

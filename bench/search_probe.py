@@ -1,12 +1,12 @@
 """Banc de la recherche manuelle, en direct : vraie API skills.sh, vrai
 GitHub, vrai Jev. Pour chaque besoin de référence, vérifie que les skills
-attendus sortent dans le top 10.
+attendus sortent parmi les 5 skills affichés.
 
 Usage (PowerShell, la clé est lue dans les variables utilisateur) :
   $env:TYPESAFE_API_KEY = [Environment]::GetEnvironmentVariable('TYPESAFE_API_KEY','User')
   py -3.14 bench/search_probe.py            # tous les cas
   py -3.14 bench/search_probe.py evals      # un seul cas
-Coût : jusqu'à 75 appels Jev par cas. N'imprime jamais la clé."""
+Coût : jusqu'à 75 appels Jev par cas, plus 5 pour les explications. N'imprime jamais la clé."""
 from __future__ import annotations
 
 import contextlib

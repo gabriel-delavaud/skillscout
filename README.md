@@ -36,7 +36,7 @@ Le problème : **un skill, ce sont des instructions que Claude va suivre avec vo
                                                           ce qui répond à votre besoin
 ```
 
-Tout se fait par lots de 25 candidats : tant que moins de 10 skills pertinents sont trouvés, skillscout examine le lot suivant, jusqu'à 75 candidats (`--limit`).
+Tout se fait par lots de 25 candidats : tant que moins de 10 skills pertinents sont trouvés, skillscout examine le lot suivant, jusqu'à 75 candidats (`--limit`). Il affiche ensuite **les 5 meilleurs**, chacun avec ses forces et ses faiblesses.
 
 **Point important : le premier tri (étapes 1 à 4) ne passe par aucune IA.** C'est du code, identique à chaque exécution, vérifiable ligne par ligne. Jev n'intervient qu'ensuite, sur les candidats restants : il peut en écarter d'autres, **jamais repêcher** un skill écarté. Le texte des skills lui est présenté comme une donnée à juger, jamais comme une consigne. Sans clé Jev, ou avec `--no-jev`, vous obtenez le classement déterministe seul.
 
@@ -178,35 +178,48 @@ skillscout "ce que vous voulez faire" -q "mots du domaine" -q "autres mots"
 ## Lire le résultat
 
 ```
-TOP 10 par pertinence (Jev) (3 écarté(s) sur 25 examiné(s), 0 ignoré(s))
+TOP 5 par pertinence (Jev) (4 écarté(s) sur 25 examiné(s), 0 ignoré(s))
 
- 1. eval-harness                 50.0  affaan-m/ecc@1a2b3c4            ✓ déjà installé · sans fichier exécutable · +2 variante(s)
-    besoin 2.9/3 · méta 2.1/3 — Formal evaluation framework for Claude Code sessions
- 2. eval-harness-first           80.0  wshobson/agents@5d6e7f8         ✓ déjà installé · éditeur en liste blanche · sans fichier exécutable
-    besoin 2.5/3 · méta 1.8/3 — Build the evaluation harness that gates every fine-tuning run
+ 1. eval-harness                         50.0  affaan-m/ecc@d3b8a3e
+    besoin 2.9/3 · méta 2.6/3 · substance 3.0/3 · écriture 2.8/3
+    Eval-driven development (EDD) framework for AI coding sessions — define capability and re…
+    + répond exactement au besoin (2.9/3)
+    + prompt bien écrit pour un LLM : précis et détaillé (2.8/3)
+    + donne des exemples concrets
+    + déjà installé chez vous
+    − éditeur non vérifié (confiance 50/100)
+    − 2 version(s) retouchée(s) publiée(s) ailleurs (--json)
+
+ 2. langsmith-evaluator                  40.1  langchain-ai/langsmith-skills@bc2f989
+    besoin 2.5/3 · méta 1.9/3 · substance 3.0/3 · écriture 2.9/3
+    INVOKE THIS SKILL when building evaluation pipelines for LangSmith. Covers three core com…
+    + organisation établie (plus d'un an, 10 dépôts ou plus, active)
+    − ne sert qu'avec une plateforme, un service ou un compte précis
+    − le texte demande : téléchargement exécuté (curl/wget | sh)
 ```
 
-Avec Jev, seuls les skills qu'il juge pertinents pour votre besoin (au moins 1,5/3) sont affichés, du plus au moins pertinent ; s'il y en a moins de 10, l'en-tête l'annonce (« Seulement 4 skill(s) pertinent(s) trouvé(s) »). Sans Jev, l'ordre est celui de skills.sh : la confiance écarte, elle ne classe pas.
+Chaque skill tient dans un bloc, séparé du suivant par une ligne vide :
 
-Chaque ligne donne : le **nom du skill**, son **score de confiance**, le **dépôt** et l'**empreinte de l'arborescence** inspectée, et des **indicateurs** :
+1. le **nom**, le **score de confiance** (sur 100) et le **dépôt**, avec l'empreinte de l'arborescence inspectée ;
+2. les **notes de Jev**, sur 3 :
+   - **besoin** : à quel point le skill répond à votre phrase ;
+   - **méta** : s'il améliore aussi la façon de travailler de Claude en général ;
+   - **substance** : vraie méthode, ou coquille vide ;
+   - **écriture** : si le texte est bien écrit *pour un LLM* (précis, détaillé, dit quand s'en servir, avec étapes, contraintes et résultat attendu) ;
+3. la **description** du skill ;
+4. ses **forces** (`+`) et **faiblesses** (`−`).
 
-| Indicateur | Signification |
+Avec Jev, seuls les skills qu'il juge pertinents pour votre besoin (au moins 1,5/3) sont retenus, du plus au moins pertinent ; s'il y en a moins de 5, l'en-tête l'annonce (« Seulement 3 skill(s) pertinent(s) trouvé(s) »). Sans Jev, l'ordre est celui de skills.sh : la confiance écarte, elle ne classe pas.
+
+**Les forces et faiblesses ne sont rédigées par aucune IA.** Chaque phrase vient d'une règle fixe appliquée à ce que skillscout a mesuré : même mesure, même phrase. Elles viennent de trois sources :
+
+| Source | Exemples |
 |---|---|
-| `✓ déjà installé` | `~/.claude/skills/<nom>/SKILL.md` a exactement ce contenu (fins de ligne Windows comprises) |
-| `≈ autre version installée` | un skill de ce nom est installé, avec un autre contenu |
-| `+2 copie(s)` · `+3 variante(s)` | le même skill publié ailleurs, à l'identique (copie) ou retouché (fork, traduction) ; seule la version la plus sûre est affichée et jugée, `--json` liste les autres. Si Jev la rejette (danger ou hors sujet), la suivante est jugée à sa place, deux fois au plus |
-| `✓ variante installée (dépôt)` | ce que vous avez installé est l'une des autres versions du groupe |
-| `2 autre(s) version(s) écartée(s)` | des versions de ce skill ont été écartées : elles ne sont jamais proposées comme alternatives, `--show-excluded` dit pourquoi |
-| `éditeur en liste blanche` | publié par un éditeur reconnu |
-| `organisation : ≥365 j, ≥10 dépôts d'origine, dépôt actif` | organisation établie — ce sont des **faits mesurés**, pas une garantie |
-| `sans fichier exécutable` | aucun code exécutable dans le dossier du skill — un fait sur les fichiers, pas un brevet de sûreté |
-| `⚠ 3 fichiers exécutables` | contient du code, mais l'éditeur est de confiance |
-| `⚠ SKILL.md : …` | le texte du skill contient un motif sensible ; le skill est descendu dans le classement |
-| `⚠ SKILL.md non lu` | le texte n'a pas pu être récupéré : rien n'a été vérifié dessus (n'apparaît que chez un éditeur de confiance ; un inconnu est écarté) |
-| `⚠ 1 lien symbolique ou sous-module` | le dossier du skill contient une entrée dont le contenu n'a pas pu être inspecté (éditeur de confiance uniquement) |
-| `⚠ non maintenu depuis plus d'un an` | le dépôt semble abandonné |
-| `⚠ Jev : …` | Jev relève un risque (valeur de 0 à 1) sans atteindre le seuil d'exclusion |
-| `⚠ non jugé par Jev (…)` | sans Jev (clé absente ou panne) : le skill n'a pas été jugé ; quand Jev fonctionne, un skill qu'il n'a pas pu juger n'est pas affiché, et l'en-tête compte ces « non jugé(s) par Jev ». Si Jev tombe en panne en cours de route, la recherche s'arrête et l'annonce (« résultats partiels ») |
+| Notes de Jev | « répond exactement au besoin » (≥ 2,5/3), « ne répond qu'en partie » (< 2/3), « contenu mince » (substance < 1,5/3), « prompt bien écrit » (écriture ≥ 2,5/3) ou « mal écrit » (< 1,5/3), « dégâts possibles s'il est suivi à la lettre » (gravité ≥ 1,5/3) |
+| Trois questions de plus à Jev, posées aux 5 skills affichés seulement | « donne des exemples concrets », « étapes claires, dans l'ordre », « ne sert qu'avec une plateforme, un service ou un compte précis » (oui au-delà de 0,6, non en deçà de 0,25 ; entre les deux, rien n'est dit) |
+| Tri de confiance | éditeur reconnu ou non vérifié, fichiers exécutables, motifs sensibles dans le texte (« le texte demande : … »), risques relevés par Jev (« Jev y soupçonne : … »), maintenance, popularité (≥ 10 000 ou < 100 installations), déjà installé, autres versions publiées ailleurs |
+
+Sans Jev (`--no-jev`, clé absente ou panne), seules les mesures du tri de confiance sont utilisées.
 
 Pour installer le skill retenu, utilisez l'outil officiel :
 
@@ -236,7 +249,7 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **275 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
+- **287 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
 - Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/cache.db` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 

@@ -154,7 +154,7 @@ class TestMainJev(unittest.TestCase):
         fake = FakeJev({"d-s1": answers(need=1.0), "d-s2": answers(need=3.0, meta=2.0)})
         code, out, err, _ = self._run(["besoin"], fake)
         self.assertEqual(code, 0)
-        self.assertIn("besoin 3.0/3 · méta 2.0/3 · substance 3.0/3 — d-s2", out)
+        self.assertIn("besoin 3.0/3 · méta 2.0/3 · substance 3.0/3\n    d-s2", out)
         self.assertNotIn("d-s1", out)                   # besoin 1/3 : sous le seuil
         self.assertIn("Seulement 1 skill(s) pertinent(s)", out)
 

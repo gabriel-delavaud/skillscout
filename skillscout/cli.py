@@ -9,25 +9,27 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
-from . import config, github, inspection, jev, local, rank, sources, verdict
+from . import config, explain, github, inspection, jev, local, rank, sources, verdict
 
 
-def format_top10(rows: list[dict]) -> str:
-    lines = []
+def format_top(rows: list[dict]) -> str:
+    """Un bloc par skill, séparé du suivant par une ligne vide : nom, score de
+    confiance et dépôt, notes de Jev, description, puis forces (+) et
+    faiblesses (−)."""
+    blocks = []
     for i, r in enumerate(rows, 1):
         sha = (r.get("tree_sha") or "")[:7]
         where = f"{r['source']}@{sha}" if sha else r["source"]
-        lines.append(
-            f"{i:2}. {r['skill_id']:<34} {r['score']:>6.1f}  "
-            f"{where:<40} {' · '.join(r.get('flags', []))}"
-        )
-        extra = r.get("relevance")
-        if extra:
-            desc = " ".join((r.get("description") or "").split())
-            if len(desc) > 90:
-                desc = desc[:89] + "…"
-            lines.append(f"    {extra}" + (f" — {desc}" if desc else ""))
-    return "\n".join(lines)
+        lines = [f"{i:2}. {r['skill_id']:<34} {r['score']:>6.1f}  {where}"]
+        if r.get("relevance"):
+            lines.append(f"    {r['relevance']}")
+        desc = " ".join((r.get("description") or "").split())
+        if desc:
+            lines.append("    " + (desc if len(desc) <= 90 else desc[:89] + "…"))
+        lines += [f"    + {x}" for x in r.get("strengths", [])]
+        lines += [f"    − {x}" for x in r.get("weaknesses", [])]
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 def format_excluded(rows: list[dict]) -> str:
@@ -112,7 +114,7 @@ def _main_search(argv: list[str]) -> int:
                     help="requête envoyée à skills.sh, répétable (mots courts du domaine : "
                          "« eval harness »). Par défaut : le besoin lui-même")
     ap.add_argument("--json", action="store_true",
-                    help="sortie machine du top 10")
+                    help="sortie machine des skills affichés")
     ap.add_argument("--show-excluded", action="store_true",
                     help="liste aussi les candidats écartés et pourquoi")
     ap.add_argument("--limit", type=int, default=config.SEARCH_CEILING,
@@ -155,6 +157,7 @@ def _main_search(argv: list[str]) -> int:
     # sans Jev) ou atteindre le plafond.
     rows: list[dict] = []
     ignored, skipped, examined, pos, batch_no = [], [], 0, 0, 0
+    outage = False
     failed_calls = 0      # appels à Jev en échec d'affilée (pas les refus propres à un skill)
     ceiling = min(args.limit, len(candidates))
     while pos < ceiling:
@@ -169,7 +172,6 @@ def _main_search(argv: list[str]) -> int:
         if use_jev:
             # Une version arrivée dans ce lot peut remplacer une version déjà rejetée.
             todo += rank.promote(rows)
-        outage = False
         while use_jev and todo:
             verdict.judge_rows(todo, client, need=args.besoin)
             judged = [r for r in todo if "jev" in r]
@@ -209,7 +211,7 @@ def _main_search(argv: list[str]) -> int:
     excluded_rows = [r for r in rank.members(rows) if r["excluded"]]
     unjudged = sum(1 for r in rows if use_jev and not r["excluded"]
                    and "jev" in r and r["jev"].status != "ok")
-    top = (rank.rank_with_jev if use_jev else rank.rank)(rows, top=config.TOP_N)
+    top = (rank.rank_with_jev if use_jev else rank.rank)(rows, top=config.DISPLAY_N)
     hint = use_jev and not args.query and len(top) < 3
     if not top:
         if examined == 0:
@@ -230,6 +232,13 @@ def _main_search(argv: list[str]) -> int:
     for r in top:
         rank.describe_group(r)
     _mark_local(top)
+    if use_jev and not outage:
+        verdict.explain_rows(top, client)      # 3 questions de plus, aux seuls skills affichés
+    for r in top:
+        writing = (r.get("explain") or {}).get("writing")
+        if writing is not None and r.get("relevance"):
+            r["relevance"] += f" · écriture {writing:.1f}/3"
+        r["strengths"], r["weaknesses"] = explain.strengths_weaknesses(r)
 
     if args.json:
         hide = {"body", "paths", "skill_files", "_members", "_tries"}
@@ -241,13 +250,13 @@ def _main_search(argv: list[str]) -> int:
     counts = (f"{len(excluded_rows)} écarté(s) sur {examined} examiné(s), "
               f"{len(ignored) + len(skipped)} ignoré(s)"
               + (f", {unjudged} non jugé(s) par Jev" if unjudged else ""))
-    if use_jev and len(top) < config.TOP_N:
+    if use_jev and len(top) < config.DISPLAY_N:
         print(f"\nSeulement {len(top)} skill(s) pertinent(s) trouvé(s) ({counts})\n")
     elif use_jev:
-        print(f"\nTOP {config.TOP_N} par pertinence (Jev) ({counts})\n")
+        print(f"\nTOP {config.DISPLAY_N} par pertinence (Jev) ({counts})\n")
     else:
-        print(f"\nTOP {config.TOP_N} par pertinence skills.sh ({counts})\n")
-    print(format_top10(top))
+        print(f"\nTOP {config.DISPLAY_N} par pertinence skills.sh ({counts})\n")
+    print(format_top(top))
     print("\nLe @sha après le dépôt identifie l'arborescence évaluée ; le "
           "SKILL.md analysé est celui de cet instantané.")
     if hint:
