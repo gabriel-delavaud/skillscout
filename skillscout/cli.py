@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
-from . import config, explain, github, inspection, jev, local, rank, sources, verdict
+from . import config, explain, github, inspection, install, jev, local, rank, sources, verdict
 
 
 def format_top(rows: list[dict]) -> str:
@@ -269,7 +269,15 @@ def _main_search(argv: list[str]) -> int:
         print(f"\nÉcartés ({len(excluded_rows)}) :\n")
         print(format_excluded(excluded_rows))
 
+    if _interactif():
+        return install.installer_choix(top, config.skills_dir())
     return 0
+
+
+def _interactif() -> bool:
+    """La question d'installation n'est posée qu'à un humain devant un terminal :
+    jamais quand l'entrée ou la sortie est redirigée (scripts, --json)."""
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 # Retirées en 2.2.0 avec la routine d'installation automatique : un premier mot
@@ -292,4 +300,9 @@ def main(argv: list[str]) -> int:
 
 def cli() -> None:
     """Point d'entrée `skillscout` installé par pip/pipx/uv."""
+    # Sortie redirigée sous Windows : l'encodage par défaut (cp1252) ne sait pas écrire
+    # « ⚠ » ni « → », et `--json` plantait ; un programme qui lit la sortie attend de l'UTF-8.
+    for flux in (sys.stdout, sys.stderr):
+        if not flux.isatty() and hasattr(flux, "reconfigure"):
+            flux.reconfigure(encoding="utf-8", errors="replace")
     raise SystemExit(main(sys.argv[1:]))

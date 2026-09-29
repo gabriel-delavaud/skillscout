@@ -514,6 +514,32 @@ avec pour chacun ses forces et faiblesses, en gardant ses notes. Choix faits :
   rédigée par un modèle ; une réponse d'explication incomplète ne dit rien. Relecture : un motif relevé par le scan se dit « le texte mentionne », jamais « demande » (un texte défensif le déclenche aussi) ; « sans fichier exécutable » reste un fait sur l'arborescence ; si aucune explication ne revient, un message le dit.
 - Pas d'explication Jev sans Jev, ni après une panne : les mesures seules restent.
 
+## Choix et installation depuis le top 5 (2.3.0, 2026-09-29)
+
+Demandé par l'utilisateur : après le top 5, choisir un ou plusieurs skills dans le
+terminal, les installer, puis mettre à jour son catalogue personnel (dépôt privé
+`claude-skills`, dont le `sync.py` range avec Jev, résume, régénère et pousse).
+Ce n'est pas le retour de la routine : rien n'est installé sans un choix explicite.
+
+- `install.py`. Question `Lesquels installer ? (ex. 1,3 · « tout » · Entrée pour aucun)`,
+  reposée tant que la réponse n'est pas comprise ; le choix vaut confirmation (pas de
+  second « êtes-vous sûr »). Posée seulement si stdin et stdout sont des terminaux,
+  jamais avec `--json`.
+- Installation : `npx skills add <source> --skill <id> -g -a claude-code -y`, Claude
+  Code seulement (procédure du dépôt `claude-skills`). `source` et `id` viennent de
+  skills.sh : filtrés (`local.is_safe_name`, `owner/repo` strict) avant d'atteindre
+  npx, qui est un `.cmd` sous Windows.
+- Empreinte : après installation, `local.local_status` doit rendre « same » ; sinon
+  `npx skills remove` et message (le dépôt a changé depuis l'inspection). Un skill
+  sans `skill_md_sha` n'est pas installé automatiquement (vérification impossible).
+- Homonymes : « déjà installé » identique → rien ; autre version d'un skill que
+  `npx skills` a installé (présent dans `~/.agents/.skill-lock.json`) → question
+  `[o/N]`, non par défaut ; dossier hors registre (skill écrit ou cloné à la main)
+  → jamais remplacé.
+- Après installation : si `SKILLSCOUT_APRES_INSTALLATION` est définie, la commande est
+  lancée une fois (shell, sortie directe). Son échec ne désinstalle rien. skillscout
+  reste générique : il ne connaît pas `claude-skills`, seulement une commande.
+
 ## Limites connues
 
 - Jev est un classifieur ; un SKILL.md peut chercher à le tromper. D2, D3, la

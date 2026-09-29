@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillscout"
-version = "2.2.0"
+version = "2.3.0"
 description = "Cherche sur skills.sh les skills qui répondent à un besoin, écarte les douteux et les classe avec Jev (TypeSafe) — sans token Claude"
 readme = "README.md"
 license = { file = "LICENSE" }
