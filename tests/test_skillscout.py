@@ -24,10 +24,12 @@ class TestSearchSkills(unittest.TestCase):
         {"id": "e/f/moyen", "skillId": "moyen", "name": "moyen", "installs": 50, "source": "e/f"},
     ]}
 
-    def test_trie_par_installs_decroissant(self):
+    def test_garde_l_ordre_de_pertinence_de_l_api(self):
+        # Le tri par installations faisait passer des skills génériques très
+        # installés devant ceux qui répondent au besoin : l'ordre de l'API reste.
         with patch("skillscout.net.urlopen", return_value=fake_urlopen(self.PAYLOAD)):
             out = sources.search_skills("sécurité")
-        self.assertEqual([s["skill_id"] for s in out], ["gros", "moyen", "petit"])
+        self.assertEqual([s["skill_id"] for s in out], ["petit", "gros", "moyen"])
 
     def test_respecte_la_limite(self):
         with patch("skillscout.net.urlopen", return_value=fake_urlopen(self.PAYLOAD)):
@@ -41,18 +43,15 @@ class TestSearchSkills(unittest.TestCase):
                          {"skill_id", "name", "source", "installs", "relevance_rank"})
 
     def test_relevance_rank_reflete_l_ordre_api_pas_les_installs(self):
-        # B1 : PAYLOAD arrive dans l'ordre petit(0), gros(1), moyen(2) — mais
-        # gros est en tête une fois trié par installs. relevance_rank doit
-        # rester fidèle à la position dans la réponse de l'API, jamais au tri
-        # par installations qui suit.
         with patch("skillscout.net.urlopen", return_value=fake_urlopen(self.PAYLOAD)):
             out = sources.search_skills("sécurité")
         by_id = {s["skill_id"]: s["relevance_rank"] for s in out}
         self.assertEqual(by_id, {"petit": 0, "gros": 1, "moyen": 2})
-        # out lui-même est trié par installs (gros, moyen, petit) : le rang
-        # de pertinence ne suit pas cet ordre de sortie.
-        self.assertEqual([s["skill_id"] for s in out], ["gros", "moyen", "petit"])
-        self.assertEqual([s["relevance_rank"] for s in out], [1, 2, 0])
+
+    def test_limite_tronque_par_pertinence(self):
+        with patch("skillscout.net.urlopen", return_value=fake_urlopen(self.PAYLOAD)):
+            out = sources.search_skills("sécurité", limit=1)
+        self.assertEqual([s["skill_id"] for s in out], ["petit"])
 
     def test_liste_vide_si_aucun_resultat(self):
         with patch("skillscout.net.urlopen", return_value=fake_urlopen({"skills": []})):
@@ -438,17 +437,17 @@ class TestRank(unittest.TestCase):
         out = rank.rank(rows)
         self.assertEqual([r["skill_id"] for r in out], ["b", "c", "a"])
 
-    def test_le_score_l_emporte_toujours_sur_la_pertinence(self):
-        # La pertinence ne départage qu'à score égal — un score supérieur
-        # gagne toujours, même avec un relevance_rank moins bon.
+    def test_la_pertinence_l_emporte_sur_le_score(self):
+        # Sans Jev, la pertinence skills.sh ordonne ; la confiance écarte et
+        # départage, mais un score supérieur ne passe plus devant.
         rows = [
-            {"skill_id": "haut_score", "excluded": False, "score": 20.0,
+            {"skill_id": "haut_score", "excluded": False, "score": 100.0,
              "relevance_rank": 9},
             {"skill_id": "pertinent", "excluded": False, "score": 10.0,
              "relevance_rank": 0},
         ]
         out = rank.rank(rows)
-        self.assertEqual([r["skill_id"] for r in out], ["haut_score", "pertinent"])
+        self.assertEqual([r["skill_id"] for r in out], ["pertinent", "haut_score"])
 
 
 class TestLocateSkillMd(unittest.TestCase):
@@ -464,6 +463,12 @@ class TestLocateSkillMd(unittest.TestCase):
         self.assertEqual(
             trust.locate_skill_md(["SKILL.md", "README.md"], "peu-importe"),
             "SKILL.md")
+
+    def test_principal_le_moins_profond(self):
+        self.assertEqual(trust.primary_skill_md(
+            [".agents/skills/a/SKILL.md", "docs/fr/skills/a/SKILL.md", "skills/a/SKILL.md"]),
+            "skills/a/SKILL.md")
+        self.assertIsNone(trust.primary_skill_md([]))
 
     def test_none_si_introuvable(self):
         # Cas réel : skills.sh référence encore `securite-anssi`, renommé depuis.

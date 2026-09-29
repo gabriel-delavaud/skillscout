@@ -59,8 +59,8 @@ def parse_frontmatter(text: str) -> dict[str, str]:
 
 
 def _read_skill_mds(source: str, md_paths: list[str], blobs: dict,
-                    branch: str, cache: github.Cache) -> str | None:
-    """Texte de tous les SKILL.md du skill, bout à bout, pour l'analyse. None
+                    branch: str, cache: github.Cache) -> list[str] | None:
+    """Texte de chacun des SKILL.md du skill, dans l'ordre de `md_paths`. None
     si aucun n'est localisé ou si l'un d'eux est illisible : un texte partiel
     laisserait croire que tout a été vu."""
     texts = []
@@ -71,7 +71,7 @@ def _read_skill_mds(source: str, md_paths: list[str], blobs: dict,
                          else github.fetch_skill_md(source, branch, path))
         except (github.GhError, OSError):
             return None
-    return "\n\n".join(texts) if texts else None
+    return texts or None
 
 
 def inspect_candidate(cand: dict, cache: github.Cache, now: float) -> dict:
@@ -95,19 +95,24 @@ def inspect_candidate(cand: dict, cache: github.Cache, now: float) -> dict:
     # entrées opaques) : inutile de lire le SKILL.md d'un candidat déjà écarté.
     row = trust.evaluate(cand, repo_meta, owner_meta, scoped, now, truncated,
                    exec_bits=exec_bits, opaque=opaque, check_text=False)
-    body, md_path, md_sha = None, None, None
+    body, md_path, md_sha, primary_text = None, None, None, None
     if not row["excluded"]:
         blobs = snap.get("blobs", {})
         md_paths = trust.locate_skill_mds(paths, cand["skill_id"])
         if md_paths:
-            md_path, md_sha = md_paths[0], blobs.get(md_paths[0])
+            md_path = trust.primary_skill_md(md_paths)
+            md_sha = blobs.get(md_path)
         if set(md_paths) & set(opaque):
             # Le blob d'un SKILL.md en lien symbolique ne contient que le
             # chemin de sa cible : ce n'est pas le texte que l'agent suivra.
             full = None
         else:
-            full = _read_skill_mds(source, md_paths, blobs,
-                                   repo_meta.get("default_branch", "main"), cache)
+            texts = _read_skill_mds(source, md_paths, blobs,
+                                    repo_meta.get("default_branch", "main"), cache)
+            # Tous les SKILL.md bout à bout pour l'analyse ; le frontmatter
+            # (nom, description) vient du principal, celui dont on garde l'empreinte.
+            full = "\n\n".join(texts) if texts else None
+            primary_text = texts[md_paths.index(md_path)] if texts else None
         row = trust.evaluate(cand, repo_meta, owner_meta, scoped, now, truncated, full,
                        exec_bits=exec_bits, opaque=opaque)
         # Le texte complet est conservé : Jev le jugera en entier.
@@ -118,7 +123,7 @@ def inspect_candidate(cand: dict, cache: github.Cache, now: float) -> dict:
     row["skill_md_paths"] = trust.locate_skill_mds(paths, cand["skill_id"])
     row["exec_bits_in_scope"] = [p for p in scoped if p in set(exec_bits)]
     row["opaque_in_scope"] = [p for p in scoped if p in set(opaque)]
-    fm = parse_frontmatter(body) if body else {}
+    fm = parse_frontmatter(primary_text) if primary_text else {}
     row["description"] = fm.get("description", "")
     row["md_name"] = fm.get("name", "")
     row["body"] = body

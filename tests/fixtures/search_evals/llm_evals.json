@@ -1,0 +1,606 @@
+{
+"query": "llm evals",
+"recorded": "2026-09-29",
+"skills": [
+{
+"source": "googleworkspace/cli",
+"skillId": "recipe-collect-form-responses",
+"name": "recipe-collect-form-responses",
+"installs": 28671
+},
+{
+"source": "pbakaus/impeccable",
+"skillId": "critique",
+"name": "critique",
+"installs": 84777
+},
+{
+"source": "github/awesome-copilot",
+"skillId": "update-llms",
+"name": "update-llms",
+"installs": 8920
+},
+{
+"source": "aws/agent-toolkit-for-aws",
+"skillId": "debugging-lambda-timeouts",
+"name": "debugging-lambda-timeouts",
+"installs": 5513
+},
+{
+"source": "warpdotdev/common-skills",
+"skillId": "council",
+"name": "council",
+"installs": 25624
+},
+{
+"source": "aws/agent-toolkit-for-aws",
+"skillId": "aws-cleanrooms",
+"name": "aws-cleanrooms",
+"installs": 4912
+},
+{
+"source": "aws/agent-toolkit-for-aws",
+"skillId": "aws-lambda-managed-instances",
+"name": "aws-lambda-managed-instances",
+"installs": 4754
+},
+{
+"source": "wshobson/agents",
+"skillId": "llm-evaluation",
+"name": "llm-evaluation",
+"installs": 11798
+},
+{
+"source": "langchain-ai/langsmith-skills",
+"skillId": "langsmith-evaluator",
+"name": "langsmith-evaluator",
+"installs": 4615
+},
+{
+"source": "langchain-ai/langsmith-skills",
+"skillId": "langsmith-dataset",
+"name": "langsmith-dataset",
+"installs": 4487
+},
+{
+"source": "kunchenguid/lavish-axi",
+"skillId": "lavish",
+"name": "lavish",
+"installs": 19528
+},
+{
+"source": "code.deepline.com",
+"skillId": "deepline-plays-review",
+"name": "deepline-plays-review",
+"installs": 12313
+},
+{
+"source": "yuan1z0825/nature-skills",
+"skillId": "nature-reviewer",
+"name": "nature-reviewer",
+"installs": 11513
+},
+{
+"source": "triggerdotdev/skills",
+"skillId": "trigger-agents",
+"name": "trigger-agents",
+"installs": 2266
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 9921
+},
+{
+"source": "wshobson/agents",
+"skillId": "slo-implementation",
+"name": "slo-implementation",
+"installs": 9729
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "cost-aware-llm-pipeline",
+"name": "cost-aware-llm-pipeline",
+"installs": 9425
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "regex-vs-llm-structured-text",
+"name": "regex-vs-llm-structured-text",
+"installs": 9120
+},
+{
+"source": "imbad0202/academic-research-skills",
+"skillId": "academic-paper-reviewer",
+"name": "academic-paper-reviewer",
+"installs": 8932
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "foundation-models-on-device",
+"name": "foundation-models-on-device",
+"installs": 8914
+},
+{
+"source": "launchdarkly/ai-tooling",
+"skillId": "online-evals",
+"name": "online-evals",
+"installs": 1750
+},
+{
+"source": "launchdarkly/ai-tooling",
+"skillId": "migrate",
+"name": "migrate",
+"installs": 1746
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "laravel-verification",
+"name": "laravel-verification",
+"installs": 8248
+},
+{
+"source": "astro-han/karpathy-llm-wiki",
+"skillId": "karpathy-llm-wiki",
+"name": "karpathy-llm-wiki",
+"installs": 7625
+},
+{
+"source": "lijigang/ljg-skills",
+"skillId": "ljg-paper",
+"name": "ljg-paper",
+"installs": 6811
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "literature-review",
+"name": "literature-review",
+"installs": 6481
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "agent-architecture-audit",
+"name": "agent-architecture-audit",
+"installs": 5922
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "scholar-evaluation",
+"name": "scholar-evaluation",
+"installs": 5793
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "mle-workflow",
+"name": "mle-workflow",
+"installs": 5682
+},
+{
+"source": "forcedotcom/sf-skills",
+"skillId": "design-systems-slds-validate",
+"name": "design-systems-slds-validate",
+"installs": 5606
+},
+{
+"source": "forcedotcom/sf-skills",
+"skillId": "agentforce-test",
+"name": "agentforce-test",
+"installs": 5544
+},
+{
+"source": "jeffallan/claude-skills",
+"skillId": "prompt-engineer",
+"name": "prompt-engineer",
+"installs": 5143
+},
+{
+"source": "trailofbits/skills",
+"skillId": "libafl",
+"name": "libafl",
+"installs": 4731
+},
+{
+"source": "forcedotcom/sf-skills",
+"skillId": "mobile-platform-offline-validate",
+"name": "mobile-platform-offline-validate",
+"installs": 4695
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "recursive-decision-ledger",
+"name": "recursive-decision-ledger",
+"installs": 4619
+},
+{
+"source": "bmad-code-org/bmad-method",
+"skillId": "bmad-agent-analyst",
+"name": "bmad-agent-analyst",
+"installs": 4166
+},
+{
+"source": "bmad-code-org/bmad-method",
+"skillId": "bmad-advanced-elicitation",
+"name": "bmad-advanced-elicitation",
+"installs": 4038
+},
+{
+"source": "lingzhi227/agent-research-skills",
+"skillId": "literature-review",
+"name": "literature-review",
+"installs": 3835
+},
+{
+"source": "bmad-code-org/bmad-method",
+"skillId": "bmad-review",
+"name": "bmad-review",
+"installs": 3802
+},
+{
+"source": "grafana/skills",
+"skillId": "app-observability",
+"name": "app-observability",
+"installs": 3675
+},
+{
+"source": "arize-ai/arize-skills",
+"skillId": "arize-prompt-optimization",
+"name": "arize-prompt-optimization",
+"installs": 2996
+},
+{
+"source": "arize-ai/arize-skills",
+"skillId": "arize-evaluator",
+"name": "arize-evaluator",
+"installs": 2803
+},
+{
+"source": "arize-ai/arize-skills",
+"skillId": "arize-ai-provider-integration",
+"name": "arize-ai-provider-integration",
+"installs": 2741
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "agent-observability-trace-rca",
+"name": "agent-observability-trace-rca",
+"installs": 476
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "llm-obs-trace-rca",
+"name": "llm-obs-trace-rca",
+"installs": 238
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "agent-observability-eval-bootstrap",
+"name": "agent-observability-eval-bootstrap",
+"installs": 473
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "llm-obs-eval-bootstrap",
+"name": "llm-obs-eval-bootstrap",
+"installs": 234
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "llm-obs-eval-pipeline",
+"name": "llm-obs-eval-pipeline",
+"installs": 232
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "llm-obs-session-classify",
+"name": "llm-obs-session-classify",
+"installs": 204
+},
+{
+"source": "refoundai/lenny-skills",
+"skillId": "ai-evals",
+"name": "ai-evals",
+"installs": 2003
+},
+{
+"source": "posthog/skills",
+"skillId": "exploring-llm-evaluations",
+"name": "exploring-llm-evaluations",
+"installs": 355
+},
+{
+"source": "posthog/skills",
+"skillId": "feature-usage-feed",
+"name": "feature-usage-feed",
+"installs": 331
+},
+{
+"source": "arize-ai/phoenix",
+"skillId": "phoenix-evals",
+"name": "phoenix-evals",
+"installs": 1552
+},
+{
+"source": "davila7/claude-code-templates",
+"skillId": "prompt-engineer",
+"name": "prompt-engineer",
+"installs": 1430
+},
+{
+"source": "alirezarezvani/claude-skills",
+"skillId": "eval",
+"name": "eval",
+"installs": 1427
+},
+{
+"source": "daymade/claude-code-skills",
+"skillId": "promptfoo-evaluation",
+"name": "promptfoo-evaluation",
+"installs": 1418
+},
+{
+"source": "sickn33/agentic-awesome-skills",
+"skillId": "agent-evaluation",
+"name": "agent-evaluation",
+"installs": 1014
+},
+{
+"source": "alirezarezvani/claude-skills",
+"skillId": "senior-prompt-engineer",
+"name": "senior-prompt-engineer",
+"installs": 996
+},
+{
+"source": "datadog-labs/agent-skills",
+"skillId": "agent-observability-experiment-bootstrap",
+"name": "agent-observability-experiment-bootstrap",
+"installs": 178
+},
+{
+"source": "orchestra-research/ai-research-skills",
+"skillId": "langsmith-observability",
+"name": "langsmith-observability",
+"installs": 838
+},
+{
+"source": "orchestra-research/ai-research-skills",
+"skillId": "nemo-evaluator-sdk",
+"name": "nemo-evaluator-sdk",
+"installs": 834
+},
+{
+"source": "orchestra-research/ai-research-skills",
+"skillId": "phoenix-observability",
+"name": "phoenix-observability",
+"installs": 833
+},
+{
+"source": "mlflow/skills",
+"skillId": "instrumenting-with-mlflow-tracing",
+"name": "instrumenting-with-mlflow-tracing",
+"installs": 759
+},
+{
+"source": "mlflow/skills",
+"skillId": "agent-evaluation",
+"name": "agent-evaluation",
+"installs": 750
+},
+{
+"source": "orchestra-research/ai-research-skills",
+"skillId": "evolving-ai-agents",
+"name": "evolving-ai-agents",
+"installs": 722
+},
+{
+"source": "hamelsmu/evals-skills",
+"skillId": "write-judge-prompt",
+"name": "write-judge-prompt",
+"installs": 716
+},
+{
+"source": "mlflow/skills",
+"skillId": "querying-mlflow-metrics",
+"name": "querying-mlflow-metrics",
+"installs": 686
+},
+{
+"source": "alirezarezvani/claude-skills",
+"skillId": "rag-architect",
+"name": "rag-architect",
+"installs": 632
+},
+{
+"source": "alirezarezvani/claude-skills",
+"skillId": "prompt-engineer-toolkit",
+"name": "prompt-engineer-toolkit",
+"installs": 626
+},
+{
+"source": "daymade/claude-code-skills",
+"skillId": "llm-eval-harness",
+"name": "llm-eval-harness",
+"installs": 311
+},
+{
+"source": "alirezarezvani/claude-skills",
+"skillId": "agenthub",
+"name": "agenthub",
+"installs": 614
+},
+{
+"source": "wanshuiyin/auto-claude-code-research-in-sleep",
+"skillId": "experiment-plan",
+"name": "experiment-plan",
+"installs": 478
+},
+{
+"source": "qodex-ai/ai-agent-skills",
+"skillId": "llm-fine-tuning-guide",
+"name": "llm-fine-tuning-guide",
+"installs": 192
+},
+{
+"source": "openai/skills",
+"skillId": "codex-readiness-unit-test",
+"name": "codex-readiness-unit-test",
+"installs": 75
+},
+{
+"source": "akillness/jeo-skills",
+"skillId": "langsmith",
+"name": "langsmith",
+"installs": 325
+},
+{
+"source": "davila7/claude-code-templates",
+"skillId": "langfuse",
+"name": "langfuse",
+"installs": 301
+},
+{
+"source": "pydantic/skills",
+"skillId": "logfire-evals",
+"name": "logfire-evals",
+"installs": 297
+},
+{
+"source": "awslabs/startups",
+"skillId": "llm-to-bedrock",
+"name": "llm-to-bedrock",
+"installs": 138
+},
+{
+"source": "existential-birds/beagle",
+"skillId": "llm-judge",
+"name": "llm-judge",
+"installs": 134
+},
+{
+"source": "patricio0312rev/skills",
+"skillId": "evaluation-harness",
+"name": "evaluation-harness",
+"installs": 253
+},
+{
+"source": "amd/skills",
+"skillId": "magpie-kernel-evaluator",
+"name": "magpie-kernel-evaluator",
+"installs": 245
+},
+{
+"source": "danielmiessler/lifeos",
+"skillId": "evals",
+"name": "Evals",
+"installs": 116
+},
+{
+"source": "pedronauck/skills",
+"skillId": "testing-boss",
+"name": "testing-boss",
+"installs": 229
+},
+{
+"source": "existential-birds/beagle",
+"skillId": "agent-architecture-analysis",
+"name": "agent-architecture-analysis",
+"installs": 210
+},
+{
+"source": "awslabs/startups",
+"skillId": "prompt-library-for-startups",
+"name": "prompt-library-for-startups",
+"installs": 203
+},
+{
+"source": "rheinmir/setup",
+"skillId": "wikieval",
+"name": "wikieval",
+"installs": 195
+},
+{
+"source": "siviter-xyz/dot-agent",
+"skillId": "context-engineering",
+"name": "context-engineering",
+"installs": 189
+},
+{
+"source": "vasilyu1983/ai-agents-public",
+"skillId": "qa-agent-testing",
+"name": "qa-agent-testing",
+"installs": 186
+},
+{
+"source": "shipshitdev/skills",
+"skillId": "advanced-evaluation",
+"name": "advanced-evaluation",
+"installs": 185
+},
+{
+"source": "daffy0208/ai-dev-standards",
+"skillId": "rag-implementer",
+"name": "RAG Implementer",
+"installs": 183
+},
+{
+"source": "glebis/claude-skills",
+"skillId": "vision-bench",
+"name": "vision-bench",
+"installs": 169
+},
+{
+"source": "pixel-process-ug/superkit-agents",
+"skillId": "llm-as-judge",
+"name": "llm-as-judge",
+"installs": 80
+},
+{
+"source": "itechmeat/llm-code",
+"skillId": "skill-master",
+"name": "skill-master",
+"installs": 158
+},
+{
+"source": "sickn33/agentic-awesome-skills",
+"skillId": "llm-ops",
+"name": "llm-ops",
+"installs": 78
+},
+{
+"source": "awslabs/agent-plugins",
+"skillId": "model-evaluation",
+"name": "model-evaluation",
+"installs": 129
+},
+{
+"source": "mlflow/skills",
+"skillId": "build-a-scorer",
+"name": "build-a-scorer",
+"installs": 124
+},
+{
+"source": "rightnow-ai/openfang",
+"skillId": "prompt-engineer",
+"name": "prompt-engineer",
+"installs": 117
+},
+{
+"source": "akillness/jeo-skills",
+"skillId": "opik",
+"name": "opik",
+"installs": 113
+},
+{
+"source": "owasp/secure-agent-playbook",
+"skillId": "prompt-injection-test",
+"name": "prompt-injection-test",
+"installs": 109
+},
+{
+"source": "yonatangross/orchestkit",
+"skillId": "testing-llm",
+"name": "testing-llm",
+"installs": 104
+}
+]
+}

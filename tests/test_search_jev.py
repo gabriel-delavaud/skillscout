@@ -139,8 +139,9 @@ class TestRankWithJev(unittest.TestCase):
                         "d-egal_bas": answers(need=2.0), "d-egal_haut": answers(need=2.0)})
         v.judge_rows(rows[:2] + rows[3:], fake, "manual", need="x", workers=1)
         rows[2]["jev"] = v.unjudged("HTTP 500")
+        # « peu » (besoin 1/3) et « nonjuge » ne sont pas affichés.
         self.assertEqual([r["skill_id"] for r in rank.rank_with_jev(rows)],
-                         ["tres", "egal_haut", "egal_bas", "peu", "nonjuge"])
+                         ["tres", "egal_haut", "egal_bas"])
 
 
 class TestMainJev(unittest.TestCase):
@@ -181,8 +182,9 @@ class TestMainJev(unittest.TestCase):
         fake = FakeJev({"d-s1": answers(need=1.0), "d-s2": answers(need=3.0, meta=2.0)})
         code, out, err, _ = self._run(["besoin"], fake)
         self.assertEqual(code, 0)
-        self.assertLess(out.index("s2"), out.index("s1"))
         self.assertIn("besoin 3.0/3 · méta 2.0/3 — d-s2", out)
+        self.assertNotIn("d-s1", out)                   # besoin 1/3 : sous le seuil
+        self.assertIn("Seulement 1 skill(s) pertinent(s)", out)
 
     def test_sans_cle_bandeau_et_classement_deterministe(self):
         code, out, err, _ = self._run(["besoin"], None)

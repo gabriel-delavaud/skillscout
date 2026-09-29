@@ -1,0 +1,606 @@
+{
+"query": "eval harness",
+"recorded": "2026-09-29",
+"skills": [
+{
+"source": "affaan-m/ecc",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 9921
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "healthcare-eval-harness",
+"name": "healthcare-eval-harness",
+"installs": 7804
+},
+{
+"source": "wshobson/agents",
+"skillId": "eval-harness-first",
+"name": "eval-harness-first",
+"installs": 1914
+},
+{
+"source": "daymade/claude-code-skills",
+"skillId": "llm-eval-harness",
+"name": "llm-eval-harness",
+"installs": 311
+},
+{
+"source": "patricio0312rev/skills",
+"skillId": "evaluation-harness",
+"name": "evaluation-harness",
+"installs": 253
+},
+{
+"source": "frontier-harness-eval/eval",
+"skillId": "frontierharness-eval",
+"name": "frontierharness-eval",
+"installs": 77
+},
+{
+"source": "xu-xiang/everything-claude-code-zh",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 39
+},
+{
+"source": "youdotcom-oss/agent-skills",
+"skillId": "agent-eval-harness",
+"name": "agent-eval-harness",
+"installs": 57
+},
+{
+"source": "gpttang/skill-atlas",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 24
+},
+{
+"source": "oimiragieo/agent-studio",
+"skillId": "eval-harness-updater",
+"name": "eval-harness-updater",
+"installs": 44
+},
+{
+"source": "intertwine/dspy-agent-skills",
+"skillId": "dspy-evaluation-harness",
+"name": "dspy-evaluation-harness",
+"installs": 72
+},
+{
+"source": "tech-leads-club/agent-skills",
+"skillId": "harness-eval",
+"name": "harness-eval",
+"installs": 64
+},
+{
+"source": "plaited/agent-eval-harness",
+"skillId": "agent-eval-harness",
+"name": "agent-eval-harness",
+"installs": 19
+},
+{
+"source": "sangrokjung/claude-forge",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 14
+},
+{
+"source": "ovachiever/droid-tings",
+"skillId": "evaluating-llms-harness",
+"name": "evaluating-llms-harness",
+"installs": 55
+},
+{
+"source": "archive228/loopkit",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 12
+},
+{
+"source": "vibeeval/vibecosystem",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 11
+},
+{
+"source": "tusharkrbarman/skills-for-open-code",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 11
+},
+{
+"source": "viliawang-pm/ai-engineering-toolkit",
+"skillId": "eval-harness-builder",
+"name": "eval-harness-builder",
+"installs": 19
+},
+{
+"source": "smithery.ai",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 9
+},
+{
+"source": "alphachoi/everything-claude-code",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 9
+},
+{
+"source": "ashfaqbs/software-dev-ai-claude-toolkit",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 7
+},
+{
+"source": "angelmic/everything-claude-code-ios",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 7
+},
+{
+"source": "mhylle/claude-skills-collection",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 6
+},
+{
+"source": "eugene-ee/affaan-m-ecc",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 6
+},
+{
+"source": "arabicapp/everything-claude-code",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 6
+},
+{
+"source": "tusharkrbarman/skills-for-open-code",
+"skillId": "healthcare-eval-harness",
+"name": "healthcare-eval-harness",
+"installs": 11
+},
+{
+"source": "xbklairith/kisune",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 5
+},
+{
+"source": "kgx/ai-everything-claude-code",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 5
+},
+{
+"source": "v1truv1us/ai-eng-system",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 4
+},
+{
+"source": "sehoon787/my-codex",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 4
+},
+{
+"source": "oldwinter/skills",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 4
+},
+{
+"source": "lloredia/everything-claude-code",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 4
+},
+{
+"source": "joydai2026-del/skills",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 4
+},
+{
+"source": "aaione/everything-claude-code-zh",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 4
+},
+{
+"source": "mit-network/everything-claude-code",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 3
+},
+{
+"source": "jakezp/everything-opencode",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 3
+},
+{
+"source": "unrealandychan/clean-code-skill",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "shennawardana23/skillme",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "partha7364/everything-claude-code",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "omkarop0808/neofuture",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "materialofair/oh-my-codex",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "marvinrichter/clarc",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "mark393295827/house-maint-ai",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "luohaothu/everything-codex",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "lidge-jun/cli-jaw-skills",
+"skillId": "eval-harness",
+"name": "eval-harness",
+"installs": 2
+},
+{
+"source": "angelmic/everything-claude-code-ios",
+"skillId": "healthcare-eval-harness",
+"name": "healthcare-eval-harness",
+"installs": 7
+},
+{
+"source": "onewave-ai/claude-skills",
+"skillId": "agent-eval-harness",
+"name": "agent-eval-harness",
+"installs": 7
+},
+{
+"source": "eugene-ee/affaan-m-ecc",
+"skillId": "healthcare-eval-harness",
+"name": "healthcare-eval-harness",
+"installs": 6
+},
+{
+"source": "akillness/oh-my-gods",
+"skillId": "multi-agent-eval-harness",
+"name": "multi-agent-eval-harness",
+"installs": 5
+},
+{
+"source": "darellchua2/civiltekk-opencode-claude-skills",
+"skillId": "eval-harness-skill",
+"name": "eval-harness-skill",
+"installs": 3
+},
+{
+"source": "mit-network/everything-claude-code",
+"skillId": "healthcare-eval-harness",
+"name": "healthcare-eval-harness",
+"installs": 3
+},
+{
+"source": "shichu2024/quick-sdd",
+"skillId": "sdd-harness-eval",
+"name": "sdd-harness-eval",
+"installs": 4
+},
+{
+"source": "vercel-labs/open-agents",
+"skillId": "deploy-open-harness",
+"name": "deploy-open-harness",
+"installs": 128
+},
+{
+"source": "huggingface/skills",
+"skillId": "huggingface-community-evals",
+"name": "huggingface-community-evals",
+"installs": 1658
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "gan-style-harness",
+"name": "gan-style-harness",
+"installs": 7664
+},
+{
+"source": "affaan-m/ecc",
+"skillId": "dynamic-workflow-mode",
+"name": "dynamic-workflow-mode",
+"installs": 4011
+},
+{
+"source": "zernie/vigiles",
+"skillId": "test-harness",
+"name": "test-harness",
+"installs": 1972
+},
+{
+"source": "github/awesome-copilot",
+"skillId": "harness-engineering",
+"name": "harness-engineering",
+"installs": 191
+},
+{
+"source": "zernie/vigiles",
+"skillId": "debug-my-harness",
+"name": "debug-my-harness",
+"installs": 1461
+},
+{
+"source": "huggingface/skills",
+"skillId": "hugging-face-evaluation",
+"name": "hugging-face-evaluation",
+"installs": 275
+},
+{
+"source": "k-dense-ai/scientific-agent-skills",
+"skillId": "arbor",
+"name": "arbor",
+"installs": 980
+},
+{
+"source": "denissergeevitch/agents-best-practices",
+"skillId": "agents-best-practices",
+"name": "agents-best-practices",
+"installs": 958
+},
+{
+"source": "ruvnet/ruflo",
+"skillId": "harness-score",
+"name": "harness-score",
+"installs": 234
+},
+{
+"source": "ruvnet/ruflo",
+"skillId": "harness-mcp-scan",
+"name": "harness-mcp-scan",
+"installs": 232
+},
+{
+"source": "callstackincubator/react-native-harness",
+"skillId": "react-native-harness",
+"name": "react-native-harness",
+"installs": 88
+},
+{
+"source": "getsentry/vitest-evals",
+"skillId": "vitest-evals",
+"name": "vitest-evals",
+"installs": 82
+},
+{
+"source": "ruvnet/ruflo",
+"skillId": "gaia-architecture-comparison",
+"name": "gaia-architecture-comparison",
+"installs": 410
+},
+{
+"source": "ruvnet/ruflo",
+"skillId": "harness-security-bench",
+"name": "harness-security-bench",
+"installs": 201
+},
+{
+"source": "ruvnet/ruflo",
+"skillId": "harness-bench",
+"name": "harness-bench",
+"installs": 200
+},
+{
+"source": "guanyang/open-agent-hub",
+"skillId": "harness-engineering",
+"name": "harness-engineering",
+"installs": 155
+},
+{
+"source": "10xchengtu/harness-engineering",
+"skillId": "harness-engineering",
+"name": "harness-engineering",
+"installs": 131
+},
+{
+"source": "muratcankoylan/agent-skills-for-context-engineering",
+"skillId": "harness-engineering",
+"name": "harness-engineering",
+"installs": 120
+},
+{
+"source": "ruvnet/ruflo",
+"skillId": "harness-learn",
+"name": "harness-learn",
+"installs": 117
+},
+{
+"source": "hedera-dev/hedera-skills",
+"skillId": "harness-spec-anatomy",
+"name": "harness-spec-anatomy",
+"installs": 109
+},
+{
+"source": "10xchengtu/harness-engineering",
+"skillId": "harness-engineering-zh",
+"name": "harness-engineering-zh",
+"installs": 90
+},
+{
+"source": "sickn33/agentic-awesome-skills",
+"skillId": "ai-engineering-toolkit",
+"name": "ai-engineering-toolkit",
+"installs": 167
+},
+{
+"source": "nextstage-brasil/skills",
+"skillId": "ns-harness",
+"name": "ns-harness",
+"installs": 154
+},
+{
+"source": "oh-my-dsh/dsh-plugin-upgrade-skill",
+"skillId": "plugin-test",
+"name": "plugin-test",
+"installs": 107
+},
+{
+"source": "hedera-dev/hedera-skills",
+"skillId": "review-harness-spec",
+"name": "review-harness-spec",
+"installs": 101
+},
+{
+"source": "openai/openai-cookbook",
+"skillId": "bootstrap-realtime-eval",
+"name": "bootstrap-realtime-eval",
+"installs": 20
+},
+{
+"source": "limchihi/harness",
+"skillId": "setup-harness",
+"name": "setup-harness",
+"installs": 91
+},
+{
+"source": "openrouterteam/skills",
+"skillId": "spawn-ori-eval",
+"name": "spawn-ori-eval",
+"installs": 83
+},
+{
+"source": "alpoxdev/hypercore",
+"skillId": "docs-maker",
+"name": "docs-maker",
+"installs": 77
+},
+{
+"source": "b-mendoza/agent-skills",
+"skillId": "improving-test-suites",
+"name": "improving-test-suites",
+"installs": 70
+},
+{
+"source": "gtmagents/gtm-agents",
+"skillId": "governance",
+"name": "governance",
+"installs": 68
+},
+{
+"source": "gtmagents/gtm-agents",
+"skillId": "channel-pacing-guardrails",
+"name": "channel-pacing-guardrails",
+"installs": 65
+},
+{
+"source": "simota/agent-skills",
+"skillId": "oracle",
+"name": "oracle",
+"installs": 60
+},
+{
+"source": "prompt-security/clawsec",
+"skillId": "hermes-traffic-guardian",
+"name": "hermes-traffic-guardian",
+"installs": 59
+},
+{
+"source": "justinramos101/agent-skill-kit",
+"skillId": "harden-repo-for-coding-agents",
+"name": "harden-repo-for-coding-agents",
+"installs": 46
+},
+{
+"source": "justinramos101/agent-skill-kit",
+"skillId": "rules-from-coding-agent-failures",
+"name": "rules-from-coding-agent-failures",
+"installs": 43
+},
+{
+"source": "jianshuo/claude-skills",
+"skillId": "wjs-evaling-voicedrop-prompts",
+"name": "wjs-evaling-voicedrop-prompts",
+"installs": 39
+},
+{
+"source": "dotnet/efcore",
+"skillId": "make-instructions",
+"name": "make-instructions",
+"installs": 39
+},
+{
+"source": "codestable/codestable",
+"skillId": "build-cs-skill",
+"name": "build-cs-skill",
+"installs": 39
+},
+{
+"source": "dotnet/efcore",
+"skillId": "make-skill",
+"name": "make-skill",
+"installs": 37
+},
+{
+"source": "nextstage-brasil/skills",
+"skillId": "ns-skill-creator",
+"name": "ns-skill-creator",
+"installs": 37
+},
+{
+"source": "nextstage-brasil/skills",
+"skillId": "skill-creator",
+"name": "skill-creator",
+"installs": 35
+},
+{
+"source": "sebastianelvis/senate",
+"skillId": "evals",
+"name": "evals",
+"installs": 15
+},
+{
+"source": "writeitai/eval-banana",
+"skillId": "eval-banana",
+"name": "eval-banana",
+"installs": 13
+},
+{
+"source": "capitalone/context-specs",
+"skillId": "evaluate-sessions",
+"name": "evaluate-sessions",
+"installs": 12
+}
+]
+}

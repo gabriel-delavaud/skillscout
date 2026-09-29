@@ -140,10 +140,9 @@ class TestDiscover(Base):
         search = {"workflow": [cand("a", installs=10), cand("b", installs=900)],
                   "python": [cand("A", installs=50)]}          # même skill que "a"
 
-        def fake_search(q, limit=25):
+        def fake_search(q):
             if q not in search:
                 raise sources.SearchError("hors ligne")
-            self.assertEqual(limit, 25)
             return search[q]
         prof = self.prof(leaderboard_top="5")
         with patch("skillscout.sources.search_skills", side_effect=fake_search), \
@@ -157,6 +156,16 @@ class TestDiscover(Base):
         self.assertEqual(len(errors), 1)
         self.assertIn("hot", errors[0])
         self.assertFalse(search_down)
+
+    def test_par_theme_les_plus_installes_gardes_apres_troncature(self):
+        # skills.sh renvoie par pertinence ; la routine, elle, garde par thème
+        # les `per_query` plus installés, le plus installé en dernier ici.
+        hits = [cand(f"s{i}", installs=i) for i in range(30)]
+        with patch("skillscout.sources.search_skills", return_value=hits), \
+             patch("skillscout.sources.fetch_leaderboard", return_value=[]):
+            cands, _, _ = routine.discover(self.prof())
+        kept = {c["skill_id"] for c in cands}
+        self.assertEqual(kept, {f"s{i}" for i in range(5, 30)})     # per_query = 25
 
     def test_panne_inattendue_d_une_source_notee_pas_fatale(self):
         # Revue finale I2 (c) : toute exception, pas seulement SearchError.

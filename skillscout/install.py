@@ -146,6 +146,36 @@ def present_names(paths: config.Paths) -> set[str]:
     return names
 
 
+def local_status(row: dict, skills_dir: Path) -> str | None:
+    """Ce skill est-il déjà dans `skills_dir` ? « same » si un dossier à son
+    nom (identifiant skills.sh ou `name` du frontmatter) contient un SKILL.md
+    de même empreinte Git que l'un des SKILL.md évalués (un dépôt peut en
+    contenir plusieurs : original, traductions), « other » si un dossier à ce
+    nom existe avec un autre contenu, None sinon. Le nom seul ne suffit pas à
+    dire « déjà installé » : deux skills différents portent souvent le même.
+    Les fins de ligne CRLF sont ramenées à LF avant comparaison : `npx skills`
+    sous Windows peut les avoir converties."""
+    files = row.get("skill_files") or {}
+    shas = {files[p] for p in row.get("skill_md_paths") or () if p in files}
+    shas.discard(None)
+    if row.get("skill_md_sha"):
+        shas.add(row["skill_md_sha"])
+    found = False
+    for name in dict.fromkeys(n.lower() for n in (row.get("skill_id"), row.get("md_name")) if n):
+        if not is_safe_name(name):        # vient de skills.sh : jamais un chemin
+            continue
+        folder = skills_dir / name
+        try:
+            data = (folder / "SKILL.md").read_bytes()
+        except OSError:
+            found = found or folder.exists()
+            continue
+        found = True
+        if {github.git_blob_sha(data), github.git_blob_sha(data.replace(b"\r\n", b"\n"))} & shas:
+            return "same"
+    return "other" if found else None
+
+
 def _check(name: str, files: dict[str, bytes], expected: dict[str, str]) -> None:
     if not is_safe_name(name):
         raise InstallError(f"nom de skill refusé : {name!r}")

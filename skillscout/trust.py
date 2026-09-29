@@ -194,6 +194,13 @@ def locate_skill_mds(paths: list[str], skill_id: str) -> list[str]:
     return ["SKILL.md"] if candidates == ["SKILL.md"] else []
 
 
+def primary_skill_md(md_paths: list[str]) -> str | None:
+    """Le SKILL.md « principal » parmi plusieurs : le moins profond, puis le
+    premier par ordre alphabétique. `skills/x/SKILL.md` passe ainsi devant
+    `.agents/skills/x/SKILL.md` ou les traductions `docs/fr/skills/x/`."""
+    return min(md_paths, key=lambda p: (p.count("/"), p)) if md_paths else None
+
+
 def locate_skill_md(paths: list[str], skill_id: str) -> str | None:
     """Premier SKILL.md du skill, pour l'affichage et la sortie JSON."""
     found = locate_skill_mds(paths, skill_id)

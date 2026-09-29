@@ -1,0 +1,210 @@
+{
+"query": "Define measurable success criteria for your LLM application and build evaluations to test it",
+"recorded": "2026-09-29",
+"skills": [
+{
+"source": "vercel-labs/skills",
+"skillId": "find-skills",
+"name": "find-skills",
+"installs": 3618479
+},
+{
+"source": "vercel-labs/agent-skills",
+"skillId": "web-design-guidelines",
+"name": "web-design-guidelines",
+"installs": 677578
+},
+{
+"source": "microsoft/azure-skills",
+"skillId": "azure-validate",
+"name": "azure-validate",
+"installs": 607325
+},
+{
+"source": "anthropics/skills",
+"skillId": "skill-creator",
+"name": "skill-creator",
+"installs": 393439
+},
+{
+"source": "microsoft/azure-skills",
+"skillId": "azure-reliability",
+"name": "azure-reliability",
+"installs": 287343
+},
+{
+"source": "mattpocock/skills",
+"skillId": "to-spec",
+"name": "to-spec",
+"installs": 577669
+},
+{
+"source": "mattpocock/skills",
+"skillId": "improve-codebase-architecture",
+"name": "improve-codebase-architecture",
+"installs": 1010381
+},
+{
+"source": "mattpocock/skills",
+"skillId": "to-questionnaire",
+"name": "to-questionnaire",
+"installs": 375051
+},
+{
+"source": "mattpocock/skills",
+"skillId": "domain-modeling",
+"name": "domain-modeling",
+"installs": 715113
+},
+{
+"source": "mattpocock/skills",
+"skillId": "codebase-design",
+"name": "codebase-design",
+"installs": 692348
+},
+{
+"source": "mattpocock/skills",
+"skillId": "diagnosing-bugs",
+"name": "diagnosing-bugs",
+"installs": 678498
+},
+{
+"source": "mattpocock/skills",
+"skillId": "research",
+"name": "research",
+"installs": 577335
+},
+{
+"source": "obra/superpowers",
+"skillId": "test-driven-development",
+"name": "test-driven-development",
+"installs": 239637
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "paper-context-resolver",
+"name": "paper-context-resolver",
+"installs": 450976
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "minimal-run-and-audit",
+"name": "minimal-run-and-audit",
+"installs": 450095
+},
+{
+"source": "obra/superpowers",
+"skillId": "brainstorming",
+"name": "brainstorming",
+"installs": 379753
+},
+{
+"source": "leonxlnx/taste-skill",
+"skillId": "full-output-enforcement",
+"name": "full-output-enforcement",
+"installs": 344115
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "ai-research-explore",
+"name": "ai-research-explore",
+"installs": 311340
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "analyze-project",
+"name": "analyze-project",
+"installs": 311112
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "ai-research-reproduction",
+"name": "ai-research-reproduction",
+"installs": 311008
+},
+{
+"source": "lllllllama/rigorpilot-skills",
+"skillId": "run-train",
+"name": "run-train",
+"installs": 310520
+},
+{
+"source": "pbakaus/impeccable",
+"skillId": "impeccable",
+"name": "impeccable",
+"installs": 300800
+},
+{
+"source": "obra/superpowers",
+"skillId": "systematic-debugging",
+"name": "systematic-debugging",
+"installs": 274973
+},
+{
+"source": "obra/superpowers",
+"skillId": "writing-plans",
+"name": "writing-plans",
+"installs": 262612
+},
+{
+"source": "obra/superpowers",
+"skillId": "requesting-code-review",
+"name": "requesting-code-review",
+"installs": 241128
+},
+{
+"source": "mattpocock/skills",
+"skillId": "diagnose",
+"name": "diagnose",
+"installs": 239393
+},
+{
+"source": "mattpocock/skills",
+"skillId": "write-a-skill",
+"name": "write-a-skill",
+"installs": 230801
+},
+{
+"source": "obra/superpowers",
+"skillId": "executing-plans",
+"name": "executing-plans",
+"installs": 224574
+},
+{
+"source": "obra/superpowers",
+"skillId": "subagent-driven-development",
+"name": "subagent-driven-development",
+"installs": 217087
+},
+{
+"source": "xixu-me/skills",
+"skillId": "opensource-guide-coach",
+"name": "opensource-guide-coach",
+"installs": 13
+},
+{
+"source": "inference-sh/skills",
+"skillId": "infsh-cli",
+"name": "infsh-cli",
+"installs": 12
+},
+{
+"source": "microsoft/azure-skills",
+"skillId": "appinsights-instrumentation",
+"name": "appinsights-instrumentation",
+"installs": 606265
+},
+{
+"source": "mattpocock/skills",
+"skillId": "prototype",
+"name": "prototype",
+"installs": 854255
+},
+{
+"source": "inference-sh/skills",
+"skillId": "agent-tools",
+"name": "agent-tools",
+"installs": 12
+}
+]
+}

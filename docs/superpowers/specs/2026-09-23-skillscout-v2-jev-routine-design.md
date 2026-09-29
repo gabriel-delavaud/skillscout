@@ -423,6 +423,60 @@ Tous sans réseau, sauf le banc.
 - Revue finale, I7 : un seul candidat par nom de dossier, le mieux classé ; les homonymes d'autres dépôts sont écartés avant le plafond.
 - Revue finale, M1 à M3 : la clé du cache Jev inclut l'empreinte du texte réellement jugé ; la simulation s'annonce « Simulation : N à installer » ; la routine refuse une arborescence tronquée même chez un éditeur en liste blanche.
 
+## Recherche manuelle 2.1 (2026-09-29)
+
+Constat : pour « Define measurable success criteria for your LLM application and
+build evaluations to test it », skillscout renvoyait find-skills, azure-reliability,
+web-design-guidelines… Deux causes : skills.sh (recherche sémantique) ne ramène sur
+une phrase entière que des skills génériques, et skillscout retriait ses résultats
+par installations avant de couper à 25, éliminant les skills pertinents peu installés
+(eval-harness 9 900 installations contre 600 000 pour azure-validate). Décisions
+prises avec l'utilisateur (séance de questions du 2026-09-29) :
+
+- `-q REQUÊTE`, répétable : les requêtes envoyées à skills.sh. Le besoin (argument
+  principal) reste ce que Jev compare au skill. Sans `-q`, la phrase est envoyée
+  telle quelle. La traduction du besoin en vocabulaire du domaine est laissée à
+  l'utilisateur (option « b » ; ni `claude -p` ni découpage local).
+- Candidats : fusion des requêtes, chaque skill à son meilleur rang, ordre de
+  pertinence de skills.sh ; les installations ne font que départager.
+- Lots de 25 (`SEARCH_BATCH`) jusqu'à 10 skills montrables (`TOP_N`) ou le plafond
+  `--limit` (75 par défaut, `SEARCH_CEILING`).
+- Avec Jev : seuls les skills de pertinence au besoin ≥ 1,5/3 (`rank.NEED_MIN`)
+  sont affichés, par pertinence décroissante ; « Seulement N skill(s) pertinent(s) »
+  s'il en manque. Sans `-q` et avec moins de 3 résultats, une astuce propose `-q`.
+- Sans Jev : ordre de skills.sh ; la confiance écarte et s'affiche, elle ne classe plus.
+- Une ligne par nom de skill (`rank.add_deduplicated`) : la version la plus sûre
+  (non écartée, meilleur score, meilleur rang) est seule inspectée par Jev et
+  affichée ; les autres sources sont des `copies` (même SKILL.md) ou des `variants`
+  (fork, traduction). Choix initial « même empreinte seulement », révisé par
+  l'utilisateur après le banc en direct : les forks retouchés occupaient 5 à 8 des
+  10 places.
+- Relecture de la branche : les versions d'un groupe restent entières
+  (`_members`), avec leur exclusion. Une version écartée n'est jamais comptée comme
+  copie ou variante (`excluded_versions`, comptée dans « écarté(s) » et listée par
+  `--show-excluded`). Quand Jev rejette la version gardée (danger ou besoin
+  < 1,5), la suivante la plus sûre, non écartée et de contenu différent, est jugée à
+  sa place (`rank.promote`, au plus `MAX_PROMOTIONS` = 2 fois par nom), quel que soit
+  le lot où elle arrive. `group_rank` porte le meilleur rang du groupe sans écraser
+  `relevance_rank`. Une panne de Jev (3 appels en échec d'affilée, `config.JEV_OUTAGE_CALLS` ; un skill trop long ou illisible ne compte pas) après un premier succès arrête la recherche
+  (« Jev indisponible à partir du lot N — résultats partiels ») ; les non-jugés sont
+  comptés dans l'en-tête. Le frontmatter vient du SKILL.md principal.
+- « ✓ déjà installé » quand `~/.claude/skills/<nom>/SKILL.md` a l'empreinte de l'un
+  des SKILL.md du skill (un dépôt comme affaan-m/ecc en contient 9 : original et
+  traductions), fins de ligne CRLF ramenées à LF (`npx skills` sous Windows) ;
+  « ✓ variante installée » si c'est une autre version du groupe ;
+  « ≈ autre version installée » si le nom existe avec un autre contenu.
+- Le SKILL.md principal (`skill_md_path`) est le moins profond, et non plus le
+  premier par ordre alphabétique (`.agents/skills/x/` passait devant `skills/x/`).
+- La routine n'est pas concernée : elle garde, par thème, les plus installés.
+
+Contrôle : `tests/test_search_v3.py` rejoue des réponses de skills.sh enregistrées
+le 2026-09-29 (`tests/fixtures/search_evals/`) ; `bench/search_probe.py` interroge
+les vrais services sur trois besoins de référence. Au 2026-09-29, « debug » et
+« plans » passent ; « evals » trouve eval-harness et eval-harness-first mais pas
+le pack hamelsmu/evals-skills, que Jev juge moins pertinent (1,1 à 2,0/3) que les
+eval-harness (2,9/3) : désaccord documenté, pas un défaut du pipeline.
+
 ## Limites connues
 
 - Jev est un classifieur ; un SKILL.md peut chercher à le tromper. D2, D3, la
