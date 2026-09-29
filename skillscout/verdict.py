@@ -3,14 +3,12 @@ Jev ne renvoie que des nombres : Noul (probabilité de « oui », 0 à 1) et
 Score (0 à 3 sur une échelle de 4 critères)."""
 from __future__ import annotations
 
-import hashlib
 import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import jev, trust
+from . import trust
 
-QUESTIONS_VERSION = 2       # à incrémenter à toute modification : invalide le cache
 JEV_TEXT_LIMIT = 102_000    # Task 0, S1 : au-delà, le skill est « non jugé ». Mesurée le
                              # 2026-09-23 : 128 000 caractères passent (complet), 256 000
                              # échouent (400 max_tokens_exceeded) ; 128 000 × 0,8 = 102 400,
@@ -18,18 +16,10 @@ JEV_TEXT_LIMIT = 102_000    # Task 0, S1 : au-delà, le skill est « non jugé �
 JEV_WORKERS = 4             # Task 0, S2 : appels Jev simultanés. Mesurée le 2026-09-23 :
                              # aucun 429 sur 4 appels parallèles (state à 4000 caractères).
 
-MANUAL_BLOCK = 0.85         # recherche manuelle : exclu au-delà…
+MANUAL_BLOCK = 0.85         # exclu au-delà…
 MANUAL_BLOCK_MID = 0.70     # … ou au-delà de ceci avec une gravité ≥ MANUAL_SEVERITY
 MANUAL_SEVERITY = 2.0
 MANUAL_FLAG = 0.35          # ⚠ affiché
-INSTALL_DANGER_MAX = 0.20   # installation automatique : n'importe quel danger ≥
-INSTALL_SEVERITY_MAX = 2.0  # relevé de 1,0 à 2,0 par décision de l'utilisateur le
-                             # 2026-09-23, après calibration (Task 14) : avec les
-                             # questions v2, ce seuil ramène le taux de faux refus
-                             # sains de 9/18 à 7/18 sans rendre propre aucun skill
-                             # signalé réel (tous ont par ailleurs un danger ≥ 0,20)
-INSTALL_RELEVANCE_MIN = 2.0
-INSTALL_SUBSTANCE_MIN = 2.0
 
 DANGERS = ("exfiltration", "secrets", "destruction", "download_exec",
            "persistence", "manipulation", "off_purpose")
@@ -93,33 +83,23 @@ META_QUESTION = _score(
     "(planning, testing, debugging, reviewing), mastery of Claude Code (subagents, hooks, "
     "memory, context), or skills about skills (creating, testing, finding skills)?", _RELEVANCE)
 NEED_QUESTION = _score("How well does `skill_md` answer the user's need `need`?", _RELEVANCE)
-STACK_QUESTION = _score("How useful is `skill_md` for the technologies and projects "
-                        "described in `profile`?", _RELEVANCE)
 SUBSTANCE_QUESTION = _score("Is `skill_md` a real, actionable method rather than an empty "
                             "shell (hollow text, marketing, stub)?",
                             ["Empty shell", "Thin", "Useful", "Substantial"])
 
-_RELEVANCE_KEYS = {"manual": ("meta", "need", "substance"),
-                   "install": ("meta", "stack", "substance")}
+RELEVANCE_KEYS = ("meta", "need", "substance")
 
 
-def questions_for(mode: str) -> dict:
-    if mode == "manual":
-        return {**SECURITY_QUESTIONS, "meta": META_QUESTION, "need": NEED_QUESTION,
-                "substance": SUBSTANCE_QUESTION}
-    if mode == "install":
-        return {**SECURITY_QUESTIONS, "meta": META_QUESTION, "stack": STACK_QUESTION,
-                "substance": SUBSTANCE_QUESTION}
-    raise ValueError(f"mode inconnu : {mode}")
+def questions() -> dict:
+    return {**SECURITY_QUESTIONS, "meta": META_QUESTION, "need": NEED_QUESTION,
+            "substance": SUBSTANCE_QUESTION}
 
 
 def build_state(text: str, description: str, files: list[str], *,
-                need: str | None = None, profile: str | None = None) -> dict:
+                need: str | None = None) -> dict:
     state = {"skill_md": text, "description": description or "", "files": list(files)}
     if need is not None:
         state["need"] = need
-    if profile is not None:
-        state["profile"] = profile
     return state
 
 
@@ -128,7 +108,7 @@ class Judgement:
     status: str                                   # "ok" | "unjudged"
     dangers: dict = field(default_factory=dict)   # clé de DANGERS -> 0..1
     severity: float = 0.0                         # 0..3
-    relevance: dict = field(default_factory=dict) # meta, need|stack, substance -> 0..3
+    relevance: dict = field(default_factory=dict) # meta, need, substance -> 0..3
     note: str = ""                                # raison si "unjudged"
     outage: bool = False                          # l'appel à Jev lui-même a échoué
 
@@ -144,7 +124,7 @@ def _num(value, hi: float) -> float:
     return x
 
 
-def parse_answers(answers: dict | None, mode: str) -> Judgement:
+def parse_answers(answers: dict | None) -> Judgement:
     """Une clé absente, d'un mauvais type ou hors bornes rend le skill « non
     jugé » : elle ne vaut jamais zéro."""
     if answers is None:
@@ -152,14 +132,14 @@ def parse_answers(answers: dict | None, mode: str) -> Judgement:
     try:
         dangers = {k: _num(answers[k]["noul"], 1.0) for k in DANGERS}
         severity = _num(answers["severity"]["score"], 3.0)
-        relevance = {k: _num(answers[k]["score"], 3.0) for k in _RELEVANCE_KEYS[mode]}
+        relevance = {k: _num(answers[k]["score"], 3.0) for k in RELEVANCE_KEYS}
     except (KeyError, TypeError, ValueError):
         return unjudged("réponse Jev incomplète")
     return Judgement("ok", dangers, severity, relevance)
 
 
 def manual_verdict(j: Judgement) -> tuple[str | None, list[str]]:
-    """Régime de la recherche manuelle : (raison d'exclusion ou None, drapeaux)."""
+    """(raison d'exclusion ou None, drapeaux)."""
     if j.status != "ok":
         return None, [f"⚠ non jugé par Jev ({j.note})"]
     for k in DANGERS:
@@ -170,81 +150,31 @@ def manual_verdict(j: Judgement) -> tuple[str | None, list[str]]:
                   for k in DANGERS if j.dangers[k] >= MANUAL_FLAG]
 
 
-def install_verdict(j: Judgement) -> str | None:
-    """Régime de l'installation automatique : None si installable."""
-    if j.status != "ok":
-        return f"non jugé par Jev ({j.note})"
-    risky = [k for k in DANGERS if j.dangers[k] >= INSTALL_DANGER_MAX]
-    if risky:
-        k = max(risky, key=j.dangers.get)
-        return (f"Jev : {DANGER_LABELS[k]} {j.dangers[k]:.2f} "
-                f"(seuil d'installation {INSTALL_DANGER_MAX:.2f})")
-    if j.severity >= INSTALL_SEVERITY_MAX:
-        return f"Jev : gravité {j.severity:.1f} (seuil d'installation {INSTALL_SEVERITY_MAX:.0f})"
-    meta, stack = j.relevance.get("meta", 0.0), j.relevance.get("stack", 0.0)
-    if max(meta, stack) < INSTALL_RELEVANCE_MIN:
-        return f"pas assez pertinent (méta {meta:.1f}/3, pile {stack:.1f}/3)"
-    substance = j.relevance.get("substance", 0.0)
-    if substance < INSTALL_SUBSTANCE_MIN:
-        return f"trop peu de substance ({substance:.1f}/3)"
-    return None
-
-
-def relevance_line(j: Judgement, mode: str) -> str:
+def relevance_line(j: Judgement) -> str:
     if j.status != "ok":
         return ""
     r = j.relevance
-    if mode == "manual":
-        return f"besoin {r['need']:.1f}/3 · méta {r['meta']:.1f}/3"
-    return f"méta {r['meta']:.1f}/3 · pile {r['stack']:.1f}/3"
+    return f"besoin {r['need']:.1f}/3 · méta {r['meta']:.1f}/3 · substance {r['substance']:.1f}/3"
 
 
-JEV_CACHE_TTL = 30 * 86400
-
-
-def _cache_key(row: dict, mode: str, profile: str | None, text: str) -> str:
-    """`text` est le texte normalisé réellement envoyé à Jev : un « ok » en
-    cache ne couvre ainsi que ce texte-là, octet pour octet, et non tout ce
-    qu'on pourrait associer plus tard à la même empreinte d'arborescence."""
-    prof = hashlib.sha1((profile or "").encode()).hexdigest()[:12]
-    judged = hashlib.sha1(text.encode("utf-8", "surrogatepass")).hexdigest()[:16]
-    return (f"{row['source']}:{row['skill_id']}@{row['tree_sha']}:{mode}:"
-            f"q{QUESTIONS_VERSION}:{jev.MODEL}:{prof}:{judged}")
-
-
-def judge_one(row: dict, client, mode: str, *, need: str | None, profile: str | None,
-              cache, text: str | None) -> Judgement:
-    """Jugement Jev d'une ligne. Le cache (routine seulement) garde la réponse
-    brute par empreinte d'arborescence, version des questions et profil : un
-    skill inchangé n'est pas facturé deux fois. En recherche manuelle, le
-    besoin change à chaque appel : pas de cache."""
+def judge_one(row: dict, client, *, need: str | None, text: str | None) -> Judgement:
+    """Jugement Jev d'une ligne. Le besoin change à chaque recherche : pas de cache."""
     if text is None:
         return unjudged("SKILL.md non lu")
     normalized = trust._normalize(text)      # le même texte que celui du tri déterministe
     if len(normalized) > JEV_TEXT_LIMIT:
         return unjudged("texte trop long pour Jev")
-    cacheable = cache is not None and bool(row.get("tree_sha"))
-    if cacheable:
-        hit = cache.get(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile, normalized),
-                        JEV_CACHE_TTL)
-        if hit is not None:
-            return parse_answers(hit["answers"], mode)
     if client is None:
         return unjudged("TYPESAFE_API_KEY absente")
     state = build_state(normalized, row.get("description", ""),
-                        sorted(row.get("skill_files") or {}), need=need, profile=profile)
-    answers = client.classify(state, questions_for(mode))
+                        sorted(row.get("skill_files") or {}), need=need)
+    answers = client.classify(state, questions())
     if answers is None:
         return unjudged(client.last_error or "Jev indisponible", outage=True)
-    judgement = parse_answers(answers, mode)
-    if judgement.status == "ok" and cacheable:
-        cache.put(f"jev:v{QUESTIONS_VERSION}", _cache_key(row, mode, profile, normalized),
-                  {"answers": answers})
-    return judgement
+    return parse_answers(answers)
 
 
-def judge_rows(rows: list[dict], client, mode: str, *, need: str | None = None,
-               profile: str | None = None, cache=None, text_of=None,
+def judge_rows(rows: list[dict], client, *, need: str | None = None, text_of=None,
                workers: int = JEV_WORKERS) -> None:
     """Pose `row["jev"]` sur chaque ligne non exclue. Jev n'ajoute que des
     exclusions (D3) : une ligne déjà exclue n'est ni jugée ni réintégrée.
@@ -255,8 +185,7 @@ def judge_rows(rows: list[dict], client, mode: str, *, need: str | None = None,
 
     def work(r):
         try:
-            return judge_one(r, client, mode, need=need, profile=profile, cache=cache,
-                             text=text_of(r))
+            return judge_one(r, client, need=need, text=text_of(r))
         except Exception as e:       # noqa: BLE001 — une ligne ne bloque pas les autres
             return unjudged(type(e).__name__)
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
@@ -265,7 +194,7 @@ def judge_rows(rows: list[dict], client, mode: str, *, need: str | None = None,
 
 
 def apply_manual(rows: list[dict]) -> None:
-    """Applique le régime manuel aux lignes jugées : exclusions et drapeaux."""
+    """Applique le verdict aux lignes jugées : exclusions et drapeaux."""
     for r in rows:
         j = r.get("jev")
         if j is None or r.get("excluded"):

@@ -1,11 +1,11 @@
 """Recherche manuelle : requêtes multiples, ordre de pertinence, lots Jev,
 copies regroupées, skills déjà installés, cas de référence hors ligne."""
-import contextlib, hashlib, io, json, os, shutil, sys, tempfile, threading, unittest
+import contextlib, io, json, os, shutil, sys, tempfile, threading, unittest
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from skillscout import cli, config, github, install, rank, sources, verdict as v
+from skillscout import cli, config, github, local, rank, sources, verdict as v
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "search_evals"
 
@@ -224,17 +224,17 @@ class TestLocalStatus(unittest.TestCase):
     def test_meme_empreinte_deja_installe(self):
         row = inspected(cand("s"))
         self._put("s", row["body"])
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_meme_nom_autre_contenu(self):
         row = inspected(cand("s"))
         self._put("s", "# ma version\n")
-        self.assertEqual(install.local_status(row, self.dir), "other")
+        self.assertEqual(local.local_status(row, self.dir), "other")
 
     def test_crlf_de_npx_skills_sous_windows(self):
         row = inspected(cand("s"))
         self._put("s", row["body"].replace("\n", "\r\n"))
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_compare_a_tous_les_skill_md_du_depot(self):
         # affaan-m/ecc : l'original et ses traductions ; l'installé est l'un d'eux.
@@ -244,18 +244,18 @@ class TestLocalStatus(unittest.TestCase):
         row["skill_files"] = {".agents/skills/s/SKILL.md": row["skill_md_sha"],
                               "skills/s/SKILL.md": github.git_blob_sha(installed.encode())}
         self._put("s", installed)
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_trouve_par_le_nom_du_frontmatter(self):
         row = dict(inspected(cand("id-skills-sh")), md_name="vrai-nom")
         self._put("vrai-nom", row["body"])
-        self.assertEqual(install.local_status(row, self.dir), "same")
+        self.assertEqual(local.local_status(row, self.dir), "same")
 
     def test_absent_et_nom_dangereux(self):
-        self.assertIsNone(install.local_status(inspected(cand("s")), self.dir))
+        self.assertIsNone(local.local_status(inspected(cand("s")), self.dir))
         (self.dir.parent / "SKILL.md").write_text("x")
         self.addCleanup(lambda: (self.dir.parent / "SKILL.md").unlink(missing_ok=True))
-        self.assertIsNone(install.local_status(dict(inspected(cand("s")), skill_id=".."),
+        self.assertIsNone(local.local_status(dict(inspected(cand("s")), skill_id=".."),
                                                self.dir))
 
 
@@ -263,10 +263,10 @@ class CliCase(unittest.TestCase):
     def setUp(self):
         d = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)
-        self.paths = config.Paths.under(d)
-        self.paths.skills_dir.mkdir(parents=True)
+        self.skills = d / "claude" / "skills"
+        self.skills.mkdir(parents=True)
         for p in (patch("skillscout.config.CACHE_PATH", str(d / "cache.db")),
-                  patch("skillscout.config.default_paths", return_value=self.paths)):
+                  patch("skillscout.config.skills_dir", return_value=self.skills)):
             p.start()
             self.addCleanup(p.stop)
 
@@ -354,10 +354,10 @@ class TestCliLots(CliCase):
         cands = [cand("evals", "fork/a", rank_=0), cand("evals", "orig/b", rank_=1),
                  cand("autre", "org/c", rank_=2)]
         body = inspected(cands[0])["body"]
-        (self.paths.skills_dir / "evals").mkdir()
-        (self.paths.skills_dir / "evals" / "SKILL.md").write_bytes(body.encode())
-        (self.paths.skills_dir / "autre").mkdir()
-        (self.paths.skills_dir / "autre" / "SKILL.md").write_text("# ma version\n")
+        (self.skills / "evals").mkdir()
+        (self.skills / "evals" / "SKILL.md").write_bytes(body.encode())
+        (self.skills / "autre").mkdir()
+        (self.skills / "autre" / "SKILL.md").write_text("# ma version\n")
         jev = NeedJev(lambda d: 3.0)
         code, out, _ = self.run_cli(["x"], cands, jev)
         self.assertEqual(code, 0)
@@ -516,8 +516,8 @@ class TestCliRevue(CliCase):
         cands = [cand("s", "org/a", rank_=0), cand("s", "org/b", rank_=1)]
         rows = {c["source"]: described(c, c["source"], score=90.0 if c["source"] == "org/a"
                                        else 50.0) for c in cands}
-        (self.paths.skills_dir / "s").mkdir()
-        (self.paths.skills_dir / "s" / "SKILL.md").write_bytes(rows["org/b"]["body"].encode())
+        (self.skills / "s").mkdir()
+        (self.skills / "s" / "SKILL.md").write_bytes(rows["org/b"]["body"].encode())
         code, out, _ = self.run_cli(["x"], cands, NeedJev(lambda d: 3.0),
                                     inspect=lambda c: rows[c["source"]])
         self.assertEqual(code, 0)

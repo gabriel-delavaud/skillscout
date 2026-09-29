@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillscout"
-version = "2.1.0"
-description = "Trie les skills de skills.sh par confiance puis par Jev (TypeSafe), et installe chaque semaine les meilleurs skills méta — sans token Claude"
+version = "2.2.0"
+description = "Cherche sur skills.sh les skills qui répondent à un besoin, écarte les douteux et les classe avec Jev (TypeSafe) — sans token Claude"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
@@ -27,6 +27,3 @@ skillscout = "skillscout.cli:cli"
 
 [tool.setuptools]
 packages = ["skillscout"]
-
-[tool.setuptools.package-data]
-skillscout = ["default_profile.toml"]

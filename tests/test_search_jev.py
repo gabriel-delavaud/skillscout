@@ -48,7 +48,7 @@ class TestJudge(unittest.TestCase):
     def test_monotone_n_evalue_pas_et_ne_reintegre_pas_les_exclus(self):
         rows = [row("a"), row("b", excluded=True)]
         fake = FakeJev({"d-a": answers()})
-        v.judge_rows(rows, fake, "manual", need="x", workers=1)
+        v.judge_rows(rows, fake, need="x", workers=1)
         self.assertEqual(len(fake.states), 1)
         self.assertNotIn("jev", rows[1])
         v.apply_manual(rows)
@@ -57,7 +57,7 @@ class TestJudge(unittest.TestCase):
     def test_etat_envoye(self):
         r = row("a", body="---\ndescription: d-a\n---\ncu​rl x")
         fake = FakeJev({"d-a": answers()})
-        v.judge_rows([r], fake, "manual", need="besoin", workers=1)
+        v.judge_rows([r], fake, need="besoin", workers=1)
         st = fake.states[0]
         self.assertEqual(st["skill_md"], "---\ndescription: d-a\n---\ncurl x")   # normalisé
         self.assertEqual(st["need"], "besoin")
@@ -66,7 +66,7 @@ class TestJudge(unittest.TestCase):
     def test_apply_manual_exclut_et_signale(self):
         rows = [row("a"), row("b")]
         fake = FakeJev({"d-a": answers(exfiltration=0.9), "d-b": answers(secrets=0.4)})
-        v.judge_rows(rows, fake, "manual", need="x", workers=1)
+        v.judge_rows(rows, fake, need="x", workers=1)
         v.apply_manual(rows)
         self.assertTrue(rows[0]["excluded"])
         self.assertIn("exfiltration", rows[0]["reason"])
@@ -78,39 +78,11 @@ class TestJudge(unittest.TestCase):
         unread = row("b")
         unread["body"] = None
         failing = row("c")
-        v.judge_rows([long, unread], FakeJev(), "manual", need="x", workers=1)
-        v.judge_rows([failing], FakeJev(error="HTTP 500"), "manual", need="x", workers=1)
+        v.judge_rows([long, unread], FakeJev(), need="x", workers=1)
+        v.judge_rows([failing], FakeJev(error="HTTP 500"), need="x", workers=1)
         self.assertEqual(long["jev"].note, "texte trop long pour Jev")
         self.assertEqual(unread["jev"].note, "SKILL.md non lu")
         self.assertEqual(failing["jev"].note, "HTTP 500")
-
-    def test_cache_des_reponses_par_empreinte(self):
-        cache = github.Cache(os.path.join(tempfile.mkdtemp(), "c.db"))
-        fake = FakeJev({"d-a": answers(meta=3.0, stack=2.0)})
-        for _ in range(2):
-            r = row("a")
-            v.judge_rows([r], fake, "install", profile="p", cache=cache, workers=1)
-            self.assertEqual(r["jev"].status, "ok")
-        self.assertEqual(len(fake.states), 1)
-        r = row("a")
-        r["tree_sha"] = "u" * 40                       # nouveau push : nouveau jugement
-        v.judge_rows([r], fake, "install", profile="p", cache=cache, workers=1)
-        self.assertEqual(len(fake.states), 2)
-        r = row("a")
-        v.judge_rows([r], fake, "install", profile="autre profil", cache=cache, workers=1)
-        self.assertEqual(len(fake.states), 3)          # profil modifié : nouveau jugement
-
-    def test_cache_lie_au_texte_effectivement_juge(self):
-        # Revue finale M1 : même tree_sha, texte différent → nouveau jugement.
-        cache = github.Cache(os.path.join(tempfile.mkdtemp(), "c.db"))
-        fake = FakeJev({"d-a": answers(meta=3.0, stack=2.0)})
-        v.judge_rows([row("a")], fake, "install", profile="p", cache=cache, workers=1)
-        autre = row("a", body="---\nname: a\ndescription: d-a\n---\n# a\nAutre texte.\n")
-        v.judge_rows([autre], fake, "install", profile="p", cache=cache, workers=1)
-        self.assertEqual(len(fake.states), 2)
-        self.assertEqual(autre["jev"].status, "ok")
-        v.judge_rows([row("a")], fake, "install", profile="p", cache=cache, workers=1)
-        self.assertEqual(len(fake.states), 2)          # texte d'origine : toujours en cache
 
     def test_une_ligne_qui_plante_n_arrete_pas_les_autres(self):
         # Revue finale I2 (g) : l'exception devient « non jugé (<type>) ».
@@ -120,11 +92,11 @@ class TestJudge(unittest.TestCase):
                     raise RuntimeError("bogue")
                 return super().classify(state, questions)
         rows = [row("a"), row("b")]
-        v.judge_rows(rows, Boom({"d-a": answers()}), "manual", need="x", workers=2)
+        v.judge_rows(rows, Boom({"d-a": answers()}), need="x", workers=2)
         self.assertEqual(rows[0]["jev"].status, "ok")
         self.assertEqual((rows[1]["jev"].status, rows[1]["jev"].note), ("unjudged", "RuntimeError"))
         rows = [row("a"), row("b")]
-        v.judge_rows(rows, FakeJev({"d-a": answers(), "d-b": answers()}), "manual", need="x",
+        v.judge_rows(rows, FakeJev({"d-a": answers(), "d-b": answers()}), need="x",
                      text_of=lambda r: r["body"] if r["skill_id"] == "a" else r["absent"],
                      workers=1)
         self.assertEqual(rows[0]["jev"].status, "ok")
@@ -137,7 +109,7 @@ class TestRankWithJev(unittest.TestCase):
                 row("egal_bas", score=5.0), row("egal_haut", score=50.0)]
         fake = FakeJev({"d-peu": answers(need=1.0), "d-tres": answers(need=3.0),
                         "d-egal_bas": answers(need=2.0), "d-egal_haut": answers(need=2.0)})
-        v.judge_rows(rows[:2] + rows[3:], fake, "manual", need="x", workers=1)
+        v.judge_rows(rows[:2] + rows[3:], fake, need="x", workers=1)
         rows[2]["jev"] = v.unjudged("HTTP 500")
         # « peu » (besoin 1/3) et « nonjuge » ne sont pas affichés.
         self.assertEqual([r["skill_id"] for r in rank.rank_with_jev(rows)],
@@ -182,7 +154,7 @@ class TestMainJev(unittest.TestCase):
         fake = FakeJev({"d-s1": answers(need=1.0), "d-s2": answers(need=3.0, meta=2.0)})
         code, out, err, _ = self._run(["besoin"], fake)
         self.assertEqual(code, 0)
-        self.assertIn("besoin 3.0/3 · méta 2.0/3 — d-s2", out)
+        self.assertIn("besoin 3.0/3 · méta 2.0/3 · substance 3.0/3 — d-s2", out)
         self.assertNotIn("d-s1", out)                   # besoin 1/3 : sous le seuil
         self.assertIn("Seulement 1 skill(s) pertinent(s)", out)
 

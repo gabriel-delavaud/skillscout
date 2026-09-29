@@ -1,6 +1,6 @@
 # skillscout
 
-> Trouver le bon skill pour Claude Code **sans installer n'importe quoi** — et, si vous le voulez, recevoir chaque semaine les meilleurs, déjà triés.
+> Trouver le bon skill pour Claude Code **sans installer n'importe quoi**.
 
 [![tests](https://github.com/gabriel-delavaud/skillscout/actions/workflows/tests.yml/badge.svg)](https://github.com/gabriel-delavaud/skillscout/actions/workflows/tests.yml)
 
@@ -58,7 +58,7 @@ Un éditeur est de confiance s'il est :
 
 Un skill **sans fichier exécutable** publié par un inconnu est **gardé**, mais son texte est lu quand même. Un skill est aussi du texte que Claude exécutera : ce texte peut demander tout ce qu'un script ferait. C'est pour ça que skillscout le lit.
 
-Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier par les règles ; ce même texte normalisé, jusqu'à 102 000 caractères, est envoyé à Jev — au-delà, le skill n'est pas jugé par Jev (affiché avec `⚠` en recherche, et jamais installé par la routine). Pour l'installation automatique, c'est plus strict : un fichier qui contient le moindre caractère invisible ou de contrôle (balises Unicode, sélecteurs de variante, contrôles de direction ou de terminal…) fait écarter le skill, car ces caractères peuvent cacher à vos yeux un texte que Claude, lui, lirait.
+Avant l'analyse, le texte est normalisé : caractères invisibles retirés, lettres « pleine chasse » ramenées à l'ASCII, lignes coupées par `\` recollées. Le texte est analysé en entier par les règles ; ce même texte normalisé, jusqu'à 102 000 caractères, est envoyé à Jev — au-delà, le skill n'est pas jugé par Jev.
 
 Le texte du `SKILL.md` est aussi fouillé pour des **motifs sensibles** qui, sans écarter le skill, le font descendre dans le classement et sont affichés : accès aux secrets (`~/.ssh`, `.env`, `credentials`), suppression récursive (`rm -rf`), envoi de données vers l'extérieur (`curl -d`, `POST`), et tentatives de manipuler l'IA (« ignore les instructions précédentes », « ne le dis pas à l'utilisateur »).
 
@@ -129,13 +129,13 @@ Puis **fermez et rouvrez votre Terminal**. (Si vous utilisez bash plutôt que zs
 
 ### Sous Windows
 
-Installez le paquet depuis le dossier cloné, avec le Python qui lancera la routine (n'importe quel Python ≥ 3.11 convient, `py -3.14` n'est qu'un exemple) :
+Installez le paquet depuis le dossier cloné (n'importe quel Python ≥ 3.11 convient, `py -3.14` n'est qu'un exemple) :
 
     git clone https://github.com/gabriel-delavaud/skillscout.git
     cd skillscout
     py -3.14 -m pip install --upgrade .
 
-`--upgrade` remplace une version plus ancienne déjà installée (par exemple la 0.2.0, qui tient dans un seul fichier `skillscout.py`) : sans cela, `py -3.14 -m skillscout` et la tâche planifiée pourraient lancer l'ancienne. La commande `skillscout` est ensuite disponible ; `py -3.14 -m skillscout …` revient au même.
+`--upgrade` remplace une version plus ancienne déjà installée (par exemple la 0.2.0, qui tient dans un seul fichier `skillscout.py`). La commande `skillscout` est ensuite disponible ; `py -3.14 -m skillscout …` revient au même.
 
 ### Vérifier que ça marche
 
@@ -216,38 +216,6 @@ npx skills add etalab-ia/skills@securite-developpement
 
 ---
 
-## La routine hebdomadaire
-
-`skillscout routine` cherche seul, chaque semaine, les skills « méta » (méthode de travail, maîtrise de Claude Code, skills sur les skills) et les skills populaires qui servent **votre** pile, les juge, et **installe les meilleurs dans `~/.claude/skills`**, sans rien vous demander.
-
-Parce que personne ne relit avant installation, les critères sont plus stricts que pour la recherche :
-
-- tout le tri de sécurité ci-dessus, **plus** un seuil Jev bien plus bas : n'importe quel risque ≥ 0,20 écarte, ainsi qu'une gravité estimée ≥ 2 ;
-- **texte pur** : `SKILL.md` et fichiers `.md`/`.txt` seulement, aucun exécutable, même chez un éditeur de confiance ; **chaque fichier** est scanné et lu par Jev ;
-- au moins 100 installations sur skills.sh (sauf éditeur en liste blanche) ;
-- jamais d'écrasement : un nom déjà pris est sauté ;
-- **au plus 3 par semaine** ; les suivants attendent la semaine d'après ;
-- les fichiers écrits sont **exactement** ceux qui ont été jugés (vérifiés par leur empreinte Git).
-
-| Commande | Effet |
-|---|---|
-| `skillscout routine --dry-run` | tout, sauf l'installation : pour voir ce qu'elle ferait |
-| `skillscout routine --register` | crée la tâche Windows (lundi 10 h, rattrapée au démarrage si le PC était éteint) |
-| `skillscout routine --unregister` | supprime la tâche |
-| `skillscout installed` | liste ce que skillscout a installé |
-| `skillscout uninstall --last` | retire le dernier lot |
-| `skillscout uninstall NOM` | retire un skill installé par skillscout (et seulement ceux-là) |
-
-Pour la mettre en place sous Windows :
-
-1. installez skillscout depuis le dossier cloné avec `py -3.14 -m pip install --upgrade .` (voir « Sous Windows » plus haut) ; cela remplace l'ancienne 0.2.0 si elle est présente ;
-2. lancez `skillscout routine --dry-run` pour voir ce que la routine ferait ;
-3. lancez `skillscout routine --register` depuis **votre** terminal PowerShell, pas depuis l'app Claude. Avant de créer la tâche, `--register` vérifie la version de skillscout qu'elle lancera, et refuse si ce n'est pas celle que vous venez d'installer.
-
-Le rapport de chaque semaine est dans `~/.cache/skillscout/reports/` (par exemple `2026-W40.md`) : installés, en attente, écartés et pourquoi. Vos thèmes et votre pile se règlent dans `~/.config/skillscout/profile.toml`, créé au premier lancement. Un skill installé est pris en compte à la prochaine session de Claude.
-
----
-
 ## Limites à connaître
 
 skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
@@ -260,17 +228,17 @@ skillscout réduit le risque, il ne le supprime pas. Soyez-en conscient :
 - **L'index de skills.sh prend parfois du retard.** Un skill peut y figurer sous un ancien nom alors qu'il a été renommé ; son `SKILL.md` est alors introuvable, et le skill est écarté si son éditeur n'est pas de confiance, même s'il est inoffensif.
 - **Certaines sources de skills.sh ne sont pas des dépôts GitHub** (par exemple `smithery.ai`). skillscout ne peut pas les vérifier : il les ignore et l'indique.
 - **Jev est un classifieur, il peut se tromper, et un texte peut chercher à le tromper.** C'est pour ça qu'il ne vient qu'après le tri déterministe et ne peut rien repêcher.
-- **L'installation automatique fait suivre à Claude des instructions que personne n'a relues.** Le plafond, le texte pur et le seuil strict réduisent le risque sans l'annuler : jetez un œil au rapport hebdomadaire, et `skillscout uninstall --last` défait tout le lot.
-- **Le classement favorise les skills populaires.** La pertinence de la recherche ne sert qu'à départager deux candidats à score égal. Un skill très pertinent mais peu installé peut ne pas apparaître.
+- **La pertinence, c'est l'avis de Jev.** Il juge chaque skill isolément : un pack de plusieurs skills complémentaires peut être moins bien noté qu'un skill unique qui colle mot pour mot au besoin.
+- **skillscout n'installe rien.** Il cherche, trie et explique ; l'installation reste votre décision, avec `npx skills add`. (La routine d'installation automatique des versions 2.0 et 2.1 a été retirée en 2.2.0.)
 
 ---
 
 ## Pour les curieux
 
 - **Aucune dépendance** : uniquement la bibliothèque standard de Python.
-- **394 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
+- **275 tests**, sans aucun appel réseau, lancés à chaque commit sur Python 3.11 à 3.13, sous Linux et Windows : `python3 -m unittest discover -s tests`
 - La conception complète et le plan d'implémentation sont dans [`docs/superpowers/`](docs/superpowers/).
-- Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
+- Les métadonnées GitHub sont mises en cache dans `~/.cache/skillscout/cache.db` : les dépôts 24 h, les éditeurs et arborescences 7 jours, les fichiers lus par empreinte 30 jours. Les recherches suivantes sont presque instantanées.
 
 ---
 

@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
-from . import config, github, inspection, install, jev, rank, report, routine, schedule, sources, verdict
+from . import config, github, inspection, jev, local, rank, sources, verdict
 
 
 def format_top10(rows: list[dict]) -> str:
@@ -73,13 +73,13 @@ def _inspect_batch(batch: list[dict], cache, now: float, progress: bool
 
 def _mark_local(rows: list[dict]) -> None:
     """Drapeaux « déjà installé », « +N copies » et « +N variantes » des lignes affichées."""
-    skills_dir = config.default_paths().skills_dir
+    skills_dir = config.skills_dir()
     for r in rows:
-        status = install.local_status(r, skills_dir)
+        status = local.local_status(r, skills_dir)
         via = None
         if status == "other":     # l'installé est peut-être une autre version du groupe
             via = next((m["source"] for m in r.get("_members", ())
-                        if not m["excluded"] and install.local_status(m, skills_dir) == "same"),
+                        if not m["excluded"] and local.local_status(m, skills_dir) == "same"),
                        None)
             if via:
                 status = "variant"
@@ -105,8 +105,7 @@ def _main_search(argv: list[str]) -> int:
         prog="skillscout",
         description="Cherche sur skills.sh les skills qui répondent à un besoin ; "
                     "Jev juge leur pertinence et leur sûreté.",
-        epilog="Autres commandes : skillscout routine | uninstall | installed "
-               "(--help pour chacune).")
+        epilog="Installer le skill retenu : npx skills add <dépôt>@<skill>")
     ap.add_argument("besoin", help="ce que le skill doit savoir faire ; Jev juge la "
                                    "pertinence par rapport à cette phrase")
     ap.add_argument("-q", "--query", action="append", metavar="REQUÊTE",
@@ -172,7 +171,7 @@ def _main_search(argv: list[str]) -> int:
             todo += rank.promote(rows)
         outage = False
         while use_jev and todo:
-            verdict.judge_rows(todo, client, "manual", need=args.besoin)
+            verdict.judge_rows(todo, client, need=args.besoin)
             judged = [r for r in todo if "jev" in r]
             ok = [r for r in judged if r["jev"].status == "ok"]
             down = [r for r in judged if r["jev"].outage]
@@ -206,7 +205,7 @@ def _main_search(argv: list[str]) -> int:
     if use_jev:
         for r in rows:
             if "jev" in r:
-                r["relevance"] = verdict.relevance_line(r["jev"], "manual")
+                r["relevance"] = verdict.relevance_line(r["jev"])
     excluded_rows = [r for r in rank.members(rows) if r["excluded"]]
     unjudged = sum(1 for r in rows if use_jev and not r["excluded"]
                    and "jev" in r and r["jev"].status != "ok")
@@ -261,88 +260,18 @@ def _main_search(argv: list[str]) -> int:
     return 0
 
 
-def _main_routine(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(
-        prog="skillscout routine",
-        description="Découvre, juge (Jev) et installe au plus quelques skills ; "
-                    "réglages dans ~/.config/skillscout/profile.toml.")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="tout, sauf l'écriture dans ~/.claude/skills")
-    g = ap.add_mutually_exclusive_group()
-    g.add_argument("--register", action="store_true",
-                   help="crée la tâche Windows hebdomadaire (lundi 10 h)")
-    g.add_argument("--unregister", action="store_true", help="supprime la tâche Windows")
-    args = ap.parse_args(argv)
-    if args.register:
-        return schedule.register()
-    if args.unregister:
-        return schedule.unregister()
-    paths = config.default_paths()
-    res = routine.run_routine(paths, client=jev.JevClient.from_env(), dry_run=args.dry_run)
-    label = report.STATUS_LABELS.get(res.status, res.status)
-    rest = f"{len(res.pending)} en attente, {len(res.rejected)} écarté(s)"
-    if args.dry_run:                  # rien n'a été écrit : ne pas annoncer d'installation
-        print(f"Simulation : {len(res.installed)} à installer, {rest} (routine {label}).")
-    else:
-        print(f"Routine {label} : {len(res.installed)} installé(s), {rest}.")
-    report_path = paths.reports_dir / f"{report.iso_week_name(res.run_id)}.md"
-    if report_path.exists():
-        print(f"Rapport : {report_path}")
-    return 0 if res.status == "ok" else 1
-
-
-def _main_uninstall(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(
-        prog="skillscout uninstall",
-        description="Retire un skill installé par skillscout, et seulement ceux-là.")
-    g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("nom", nargs="?", help="nom du skill (voir skillscout installed)")
-    g.add_argument("--last", action="store_true", help="retire le lot de la dernière routine")
-    args = ap.parse_args(argv)
-    paths = config.default_paths()
-    try:
-        if not args.last:
-            print(f"retiré : {install.uninstall(args.nom, paths)}")
-            return 0
-        removed, errors = install.uninstall_last(paths)
-    except install.InstallError as e:
-        print(str(e), file=sys.stderr)
-        return 1
-    for p in removed:
-        print(f"retiré : {p}")
-    for e in errors:
-        print(e, file=sys.stderr)
-    if not removed and not errors:
-        print("Rien à retirer : skillscout n'a encore rien installé.")
-    return 1 if errors else 0
-
-
-def _main_installed(argv: list[str]) -> int:
-    argparse.ArgumentParser(prog="skillscout installed",
-                            description="Skills installés par skillscout.").parse_args(argv)
-    try:
-        entries = install.installed(config.default_paths())
-    except install.InstallError as e:
-        print(str(e), file=sys.stderr)
-        return 1
-    if not entries:
-        print("Aucun skill installé par skillscout.")
-        return 0
-    for e in sorted(entries, key=lambda e: e["installed_at"]):
-        print(f"{e['name']:<32} {e['source']}@{e['tree_sha'][:7]}  "
-              f"{e['installed_at']}  lot {e['run_id']}")
-    return 0
-
-
-_SUBCOMMANDS = {"routine": _main_routine, "uninstall": _main_uninstall,
-                "installed": _main_installed}
+# Retirées en 2.2.0 avec la routine d'installation automatique : un premier mot
+# qui les nomme n'est pas pris pour un besoin.
+_REMOVED = ("routine", "uninstall", "installed")
 
 
 def main(argv: list[str]) -> int:
-    """`skillscout "besoin"` (ou `skillscout search "besoin"`) cherche ;
-    les autres sous-commandes sont reconnues par leur premier mot."""
-    if argv and argv[0] in _SUBCOMMANDS:
-        return _SUBCOMMANDS[argv[0]](argv[1:])
+    """`skillscout "besoin"` (ou `skillscout search "besoin"`) cherche."""
+    if argv and argv[0] in _REMOVED:
+        print(f"skillscout {argv[0]} a été retiré en 2.2.0 avec la routine d'installation "
+              "automatique : cherchez avec skillscout \"besoin\", puis installez avec "
+              "npx skills add.", file=sys.stderr)
+        return 2
     if argv and argv[0] == "search":
         argv = argv[1:]
     return _main_search(argv)

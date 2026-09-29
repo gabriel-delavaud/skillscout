@@ -212,22 +212,3 @@ def fetch_skill_md(source: str, branch: str, path: str,
 def git_blob_sha(data: bytes) -> str:
     """Empreinte Git d'un blob : sha1(b"blob <taille>\\0" + contenu)."""
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
-def fetch_blob_bytes(source: str, sha: str, cache: Cache) -> bytes:
-    """Octets exacts d'un blob, vérifiés contre son empreinte : c'est ce qui
-    sera écrit sur le disque à l'installation. Un contenu qui ne correspond
-    pas au SHA demandé n'est ni renvoyé ni mis en cache."""
-    def build():
-        raw = gh_json(f"repos/{source}/git/blobs/{sha}")
-        if raw.get("encoding") != "base64":
-            raise GhError(f"blob {sha} de {source} : encodage inattendu")
-        b64 = "".join((raw.get("content") or "").split())   # GitHub coupe à 60 colonnes
-        try:
-            data = base64.b64decode(b64, validate=True)
-        except ValueError as e:
-            raise GhError(f"blob {sha} de {source} illisible : base64 invalide") from e
-        if git_blob_sha(data) != sha:
-            raise GhError(f"blob {sha} de {source} : empreinte différente du contenu reçu")
-        return {"b64": b64}
-    return base64.b64decode(_cached(cache, "blobbytes", sha, build, ttl=CACHE_TTL_BLOB)["b64"])

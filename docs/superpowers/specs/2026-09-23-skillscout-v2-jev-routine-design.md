@@ -477,6 +477,23 @@ les vrais services sur trois besoins de référence. Au 2026-09-29, « debug » 
 le pack hamelsmu/evals-skills, que Jev juge moins pertinent (1,1 à 2,0/3) que les
 eval-harness (2,9/3) : désaccord documenté, pas un défaut du pipeline.
 
+## Retrait de la routine (2.2.0, 2026-09-29)
+
+Décision de l'utilisateur : « je préfère rechercher manuellement ». La routine
+hebdomadaire d'installation automatique est retirée, avec tout ce qui ne servait
+qu'à elle : `routine.py`, `schedule.py` (tâche planifiée), `report.py`, `profile.py`
+et `default_profile.toml`, `install.py` (installation, manifeste, `uninstall`,
+`installed`), les classements /trending et /hot (`sources.fetch_leaderboard`), le
+mode « install » des questions Jev et le cache des réponses Jev, `bench/calibrate.py`.
+Les commandes `skillscout routine`, `uninstall` et `installed` répondent qu'elles
+ont été retirées (code 2) au lieu d'être prises pour un besoin. Seule la détection
+« déjà installé » survit, en lecture seule, dans `local.py`. Au moment du retrait,
+aucune tâche planifiée n'existait et la routine n'avait rien installé (pas de
+manifeste) ; les fichiers laissés par la simulation du 2026-09-27
+(`~/.config/skillscout/profile.toml`, `~/.cache/skillscout/reports/`,
+`journal.jsonl`, `routine.lock`) ne sont plus lus. Les sections de ce document
+consacrées à la routine sont historiques.
+
 ## Limites connues
 
 - Jev est un classifieur ; un SKILL.md peut chercher à le tromper. D2, D3, la
